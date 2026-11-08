@@ -5,6 +5,7 @@ export interface Arena {
   id: MapId; name: string; subtitle: string; description: string;
   width: number; depth: number; sky: number; fog: number; ground: number; wall: number; accent: number;
   boxes: Box[]; routes: Point[]; blue: Point[]; red: Point[];
+  navCell?: number; viewDistance?: number; fogNear?: number; sniperSight?: number; scopeFov?: number;
 }
 
 const box = (x: number, z: number, w: number, d: number, h = 4.8, kind: Box['kind'] = 'building', color?: number): Box => ({ x, y: h / 2, z, w, d, h, kind, color });
@@ -58,5 +59,25 @@ export const MAPS: Record<MapId, Arena> = {
     ],
     routes: [{ x: -8, z: 0 }, { x: 8, z: 0 }, { x: 0, z: 0 }, { x: -26, z: 0 }, { x: 26, z: 0 }, { x: 0, z: -22 }],
     blue: spawns(25), red: spawns(-25),
+  },
+  longshot: {
+    id: 'longshot', name: 'LONGSHOT RANGE', subtitle: '320 × 420 M / EXTREME RANGE',
+    description: 'A vast, open proving ground. Sparse cover, 370-metre spawn sightlines. AWP recommended.',
+    width: 320, depth: 420, sky: 0xc5d4d9, fog: 0xcdd9d8, ground: 0xb3b29b, wall: 0x9a9f8d, accent: 0x657e75,
+    navCell: 4, viewDistance: 900, fogNear: 300, sniperSight: 600, scopeFov: 12,
+    boxes: [
+      ...bounds(320, 420),
+      ...[-1, 1].flatMap(side => [
+        box(side * 132, -145, 18, 22, 8), box(side * 132, 145, 18, 22, 8),
+        box(side * 100, -75, 12, 4, 2.6, 'wall'), box(side * 100, 75, 12, 4, 2.6, 'wall'),
+        crate(side * 54, -110, 4, 5, 2.2), crate(side * 54, 110, 4, 5, 2.2),
+        crate(side * 72, -32, 4, 4, 1.6), crate(side * 72, 32, 4, 4, 1.6),
+        crate(side * 112, 0, 5, 4, 2.2),
+        box(side * 38, -180, 8, 3, 2.6, 'wall'), box(side * 38, 180, 8, 3, 2.6, 'wall'),
+      ]),
+    ],
+    routes: [{ x: -115, z: 0 }, { x: 115, z: 0 }, { x: -45, z: -65 }, { x: 45, z: 65 }, { x: 0, z: 0 }, { x: -100, z: 130 }, { x: 100, z: -130 }],
+    blue: spawns(185).map(p => ({ x: p.x * 3, z: p.z })),
+    red: spawns(-185).map(p => ({ x: p.x * 3, z: p.z })),
   },
 };

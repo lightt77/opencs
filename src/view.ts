@@ -56,7 +56,13 @@ export class View {
     this.clearEffects(); disposeTree(this.level); this.level.clear(); this.solids = [];
     this.snow = undefined;
     this.scene.background = new THREE.Color(arena.sky);
-    this.scene.fog = new THREE.Fog(arena.fog, 35, 115);
+    this.scene.fog = new THREE.Fog(arena.fog, arena.fogNear ?? 35, arena.viewDistance ?? 115);
+    this.camera.far = Math.max(180, (arena.viewDistance ?? 115) + 100); this.camera.updateProjectionMatrix();
+    const extent = Math.max(arena.width, arena.depth);
+    const shadowReach = Math.max(43, extent * .65);
+    this.sun.position.set(-extent * .36, extent * .61, -extent * .26);
+    Object.assign(this.sun.shadow.camera, { left: -shadowReach, right: shadowReach, top: shadowReach, bottom: -shadowReach, far: extent * 2 });
+    this.sun.shadow.camera.updateProjectionMatrix();
     const texture = this.surfaceTexture(arena.id === 'snow');
     const floorTexture = texture.clone(); floorTexture.repeat.set(arena.width / 4, arena.depth / 4);
     floorTexture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
@@ -93,14 +99,18 @@ export class View {
     }
     // Inlaid floor seams and spawn-zone markings keep the simple geometry grounded.
     const lineMat = new THREE.MeshStandardMaterial({ color: arena.id === 'snow' ? 0xb9ccd5 : arena.accent, transparent: true, opacity: .18 });
-    for (let z = -30; z <= 30; z += 5) block(this.level, [arena.width - 1, .006, .025], [0, .006, z], lineMat);
-    for (let x = -25; x <= 25; x += 5) block(this.level, [.025, .006, arena.depth - 1], [x, .006, 0], lineMat);
-    for (const [z, color, label] of [[27, 0x70b9d5, 'BLUE / 01'], [-27, 0xdb8065, 'RED / 02']] as const) {
+    const grid = extent > 100 ? 20 : 5;
+    for (let z = -Math.floor(arena.depth / 2 / grid) * grid; z < arena.depth / 2; z += grid) block(this.level, [arena.width - 1, .006, .025], [0, .006, z], lineMat);
+    for (let x = -Math.floor(arena.width / 2 / grid) * grid; x < arena.width / 2; x += grid) block(this.level, [.025, .006, arena.depth - 1], [x, .006, 0], lineMat);
+    for (const [z, color, label] of [[arena.blue[0].z - 1, 0x70b9d5, 'BLUE / 01'], [arena.red[0].z + 1, 0xdb8065, 'RED / 02']] as const) {
       const marking = new THREE.MeshStandardMaterial({ color, transparent: true, opacity: .5 });
-      block(this.level, [21, .01, .15], [0, .015, z], marking);
-      this.sign(label, color, 0, 2.6, z > 0 ? 32.44 : -32.44, z > 0 ? Math.PI : 0);
+      block(this.level, [Math.min(70, arena.width * .36), .01, .15], [0, .015, z], marking);
+      this.sign(label, color, 0, 2.6, Math.sign(z) * (arena.depth / 2 - .56), z > 0 ? Math.PI : 0);
     }
-    this.sign(arena.name, arena.accent, -28.43, 3.7, 0, Math.PI / 2);
+    this.sign(arena.name, arena.accent, -arena.width / 2 + .57, 3.7, 0, Math.PI / 2);
+    if (arena.id === 'longshot') {
+      for (let z = -180; z <= 180; z += 30) block(this.level, [.16, .012, 4], [0, .018, z], trim);
+    }
     if (arena.id === 'snow') {
       const geo = new THREE.BufferGeometry(); const data = new Float32Array(900 * 3);
       for (let i = 0; i < data.length; i += 3) { data[i] = (Math.random() - .5) * 58; data[i + 1] = Math.random() * 16; data[i + 2] = (Math.random() - .5) * 66; }

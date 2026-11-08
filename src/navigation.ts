@@ -2,13 +2,14 @@ import { distance, segmentBox, type Point, type Box } from './math';
 import type { Arena } from './maps';
 
 export class Navigation {
-  readonly cell = 1.5;
+  readonly cell: number;
   readonly cols: number;
   readonly rows: number;
   readonly walkable: Uint8Array;
   readonly walls: Box[];
 
   constructor(readonly arena: Arena) {
+    this.cell = arena.navCell ?? 1.5;
     this.cols = Math.ceil(arena.width / this.cell);
     this.rows = Math.ceil(arena.depth / this.cell);
     this.walls = arena.boxes.filter(b => b.y - b.h / 2 < 1.7);

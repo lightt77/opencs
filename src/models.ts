@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { TEAM_COLOR, type Team, type WeaponId } from './config';
+import { footTarget, solveLeg } from './animation';
+import { clamp, type Point } from './math';
 
 const material = (color: number, roughness = .85) => new THREE.MeshStandardMaterial({ color, roughness });
 const steel = material(0x303a3c, .4);
@@ -76,12 +78,19 @@ export class Soldier {
   body = new THREE.Group();
   leftLeg = new THREE.Group();
   rightLeg = new THREE.Group();
+  leftKnee = new THREE.Group();
+  rightKnee = new THREE.Group();
+  leftFoot = new THREE.Group();
+  rightFoot = new THREE.Group();
   leftArm = new THREE.Group();
   rightArm = new THREE.Group();
   gun: THREE.Group;
   label: THREE.Sprite;
   flash = 0;
   death = 0;
+  private gaitPhase = 0;
+  private gaitAmount = 0;
+  private crouchAmount = 0;
 
   constructor(team: Team, name: string, weapon: WeaponId) {
     const uniform = material(team === 'blue' ? 0x405a64 : 0x82644e);
@@ -97,12 +106,14 @@ export class Soldier {
     const helmet = block(this.body, [.32, .15, .3], [0, 1.68, 0], uniform); helmet.userData.head = true;
     const visor = block(this.body, [.26, .065, .04], [0, 1.58, -.16], dark); visor.userData.head = true;
     block(this.body, [.36, .04, .32], [0, 1.625, -.015], uniform).userData.head = true;
-    this.leftLeg.position.set(-.13, .83, 0); this.rightLeg.position.set(.13, .83, 0);
-    for (const leg of [this.leftLeg, this.rightLeg]) {
-      block(leg, [.16, .36, .19], [0, -.18, 0], uniform);
-      block(leg, [.14, .31, .17], [0, -.51, .015], uniform);
-      block(leg, [.16, .12, .28], [0, -.76, -.045], dark);
-      block(leg, [.17, .11, .04], [0, -.4, -.09], dark);
+    this.leftLeg.position.set(-.13, .84, 0); this.rightLeg.position.set(.13, .84, 0);
+    for (const [leg, knee, foot] of [[this.leftLeg, this.leftKnee, this.leftFoot], [this.rightLeg, this.rightKnee, this.rightFoot]]) {
+      block(leg, [.16, .38, .19], [0, -.19, 0], uniform);
+      knee.position.y = -.41; leg.add(knee);
+      block(knee, [.14, .36, .17], [0, -.18, 0], uniform);
+      block(knee, [.17, .11, .045], [0, -.01, -.095], dark);
+      foot.position.y = -.39; knee.add(foot);
+      block(foot, [.17, .12, .29], [0, -.045, -.065], dark);
       this.body.add(leg);
     }
     this.leftArm.position.set(-.28, 1.32, 0); this.rightArm.position.set(.28, 1.32, 0);
@@ -124,17 +135,35 @@ export class Soldier {
     this.root.traverse(o => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
   }
 
-  animate(dt: number, time: number, speed: number, alive: boolean, reloading: boolean) {
+  animate(dt: number, motion: Point, alive: boolean, reloading: boolean, grounded: boolean, crouched: boolean) {
     this.flash = Math.max(0, this.flash - dt);
     this.gun.getObjectByName('muzzle')!.visible = this.flash > 0 && alive;
     this.death += ((alive ? 0 : 1) - this.death) * Math.min(1, dt * 9);
     this.body.rotation.z = -this.death * 1.45;
-    this.body.position.y = -this.death * .35;
     this.label.visible = alive && this.label.userData.enabled !== false;
-    const stride = Math.sin(time * 11) * Math.min(speed / 6, 1) * .65;
-    this.leftLeg.rotation.x = stride; this.rightLeg.rotation.x = -stride;
+    const speed = Math.hypot(motion.x, motion.z);
+    const blend = 1 - Math.exp(-dt * 14);
+    this.gaitAmount += ((alive && grounded ? clamp(speed / 4.5, 0, 1) : 0) - this.gaitAmount) * blend;
+    this.crouchAmount += ((crouched && alive ? 1 : 0) - this.crouchAmount) * blend;
+    // Advance from actual distance travelled: blocked or stationary actors don't march in place.
+    if (alive && grounded) this.gaitPhase = (this.gaitPhase + speed * dt / 2.6) % 1;
+    const yaw = this.root.rotation.y;
+    const forward = speed > .05 ? -(motion.x * Math.sin(yaw) + motion.z * Math.cos(yaw)) / speed : 1;
+    const sideways = speed > .05 ? (motion.x * Math.cos(yaw) - motion.z * Math.sin(yaw)) / speed : 0;
+    const bob = (1 - Math.cos(this.gaitPhase * Math.PI * 4)) * .009 * this.gaitAmount;
+    this.body.position.y = -this.death * .35 - this.crouchAmount * .33 + bob;
+    this.body.rotation.x = alive ? .04 * this.gaitAmount + this.crouchAmount * .12 : 0;
+    const legs = [[this.leftLeg, this.leftKnee, this.leftFoot], [this.rightLeg, this.rightKnee, this.rightFoot]];
+    legs.forEach(([leg, knee, foot], index) => {
+      const target = footTarget(this.gaitPhase + index * .5, this.gaitAmount, forward, sideways, this.crouchAmount, bob);
+      if (!grounded && alive) { target.y += .13; target.z = index ? .12 : -.12; }
+      const pose = solveLeg(target.x, target.y, target.z);
+      leg.rotation.set(pose.hip, 0, pose.roll); knee.rotation.x = pose.knee;
+      foot.rotation.set(pose.ankle, 0, -pose.roll);
+    });
     this.gun.rotation.x = reloading ? -.55 : -this.flash * 2;
     this.rightArm.rotation.x = reloading ? .1 : -.35;
+    this.leftArm.rotation.x = -.35 + Math.sin(this.gaitPhase * Math.PI * 2) * .04 * this.gaitAmount;
   }
 }
 

@@ -8,7 +8,7 @@ for (const arena of Object.values(MAPS)) describe(`${arena.name} navigation`, ()
   it('has clear, connected spawn points on both teams', () => {
     for (const point of [...arena.blue, ...arena.red]) {
       expect(nav.clear(point, point, .7, .4)).toBe(true);
-      expect(distance(point, nav.point(nav.nearest(point)))).toBeLessThan(1.8);
+      expect(distance(point, nav.point(nav.nearest(point)))).toBeLessThan(nav.cell * 1.2);
       expect(nav.path(point, arena.routes[0]).length).toBeGreaterThan(0);
     }
   });
@@ -22,7 +22,7 @@ for (const arena of Object.values(MAPS)) describe(`${arena.name} navigation`, ()
         expect(nav.clear(previous, point, .7, .32)).toBe(true);
         previous = point;
       }
-      expect(distance(path.at(-1)!, arena.red[i])).toBeLessThan(2);
+      expect(distance(path.at(-1)!, arena.red[i])).toBeLessThan(Math.max(2, nav.cell));
     }
   });
   it('does not treat overhead arches as navigation obstacles', () => {

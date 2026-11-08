@@ -38,6 +38,11 @@ describe('combat tuning', () => {
     expect(BOT_SKILL.easy.reaction).toBeGreaterThan(BOT_SKILL.hard.reaction);
     expect(isGrenade('he')).toBe(true); expect(isGrenade('ak')).toBe(false);
   });
+  it('keeps the AWP lethal at longshot distances without extending rifle range', () => {
+    expect(WEAPONS.awp.range).toBeGreaterThan(500);
+    expect(damageAtRange(WEAPONS.awp.damage, 370, false, WEAPONS.awp.head, WEAPONS.awp.falloff)).toBeGreaterThanOrEqual(100);
+    expect(WEAPONS.ak.range).toBeLessThan(150);
+  });
 });
 
 describe('perception primitives', () => {

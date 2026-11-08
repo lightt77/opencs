@@ -9,15 +9,16 @@ const timeString = (seconds: number) => `${Math.floor(Math.max(0, seconds) / 60)
 
 export function mapSvg(arena: Arena) {
   const color = arena.id === 'snow' ? '#aec8d0' : arena.id === 'india' ? '#a6b5a0' : '#c7ab79';
+  const sx = 58 / arena.width, sz = 66 / arena.depth;
   return `<svg class="map-art" viewBox="0 0 232 150" aria-hidden="true">
     <defs><pattern id="grid-${arena.id}" width="12" height="12" patternUnits="userSpaceOnUse"><path d="M12 0H0v12" fill="none" stroke="${color}" stroke-opacity=".12" stroke-width=".6"/></pattern></defs>
     <rect width="232" height="150" fill="url(#grid-${arena.id})"/>
     <g transform="translate(116 74) rotate(-28) scale(1.6 .96) translate(-29 -33)">
       <rect x="0" y="0" width="58" height="66" fill="${color}" fill-opacity=".07" stroke="${color}" stroke-opacity=".5" stroke-width=".7"/>
-      ${arena.boxes.filter(b => b.kind !== 'wall' && b.kind !== 'beam').map(b => `<rect x="${b.x - b.w / 2 + 29}" y="${b.z - b.d / 2 + 33}" width="${b.w}" height="${b.d}" fill="${color}" fill-opacity="${b.kind === 'crate' ? '.25' : '.5'}" stroke="${color}" stroke-width=".35"/>`).join('')}
+      ${arena.boxes.filter(b => b.kind !== 'beam' && b.w < arena.width / 2 && b.d < arena.depth / 2).map(b => `<rect x="${(b.x - b.w / 2) * sx + 29}" y="${(b.z - b.d / 2) * sz + 33}" width="${b.w * sx}" height="${b.d * sz}" fill="${color}" fill-opacity="${b.kind === 'crate' ? '.25' : '.5'}" stroke="${color}" stroke-width=".35"/>`).join('')}
       <path d="M29 60V40M29 6V24" stroke="${color}" stroke-dasharray="2 2" stroke-opacity=".65"/>
       <circle cx="29" cy="60" r="1.6" fill="#8cc3d2"/><circle cx="29" cy="6" r="1.6" fill="#da967d"/>
-    </g><text x="12" y="137" fill="${color}" font-size="8" font-family="monospace" opacity=".55">SECTOR ${arena.id === 'dust' ? '01' : arena.id === 'snow' ? '02' : '03'} // 58 × 66</text>
+    </g><text x="12" y="137" fill="${color}" font-size="8" font-family="monospace" opacity=".55">SECTOR 0${Object.keys(MAPS).indexOf(arena.id) + 1} // ${arena.width} × ${arena.depth}</text>
   </svg>`;
 }
 
@@ -74,11 +75,11 @@ export class UI {
           <div class="eyebrow"><span class="tiny-cross">+</span> SINGLE PLAYER. SQUAD MENTALITY.</div>
           <h1 id="hero-title">SMALL MAPS.<br><span>BIG STAKES.</span></h1>
           <p class="intro">Old-school gunplay. A fresh field of play.<br><span>Find your angle. Trust your squad. Make every shot count.</span></p>
-          <div class="section-label"><span>01 — SELECT YOUR BATTLEFIELD</span><span class="quiet">3 AVAILABLE</span></div>
+          <div class="section-label"><span>01 — SELECT YOUR BATTLEFIELD</span><span class="quiet">${Object.keys(MAPS).length} AVAILABLE</span></div>
           <div class="map-grid" role="group" aria-label="Battlefield">
             ${Object.values(MAPS).map((map, i) => `<button class="map-card ${s.map === map.id ? 'selected' : ''}" data-map="${map.id}" aria-pressed="${s.map === map.id}" aria-label="${map.name}">
               <span class="map-number">0${i + 1}</span><span class="map-check">↗</span>${mapSvg(map)}
-              <span class="map-caption"><strong>${map.name}</strong><small>${map.id === 'dust' ? 'THREE LANES' : map.id === 'snow' ? 'CLOSE QUARTERS' : 'LONG SIGHTLINES'}</small></span>
+              <span class="map-caption"><strong>${map.name}</strong><small>${map.subtitle.split(' / ')[1]}</small></span>
             </button>`).join('')}
           </div>
           <div class="field-stats"><span><b>05 <i>vs</i> 05</b> SQUAD COMBAT</span><span><b>08</b> WEAPONS & UTILITY</span><span><b>100%</b> IN YOUR BROWSER</span></div>
@@ -93,7 +94,7 @@ export class UI {
             </div>
             <div class="control-label"><span>BOT DIFFICULTY</span><span>AIM + REACTION</span></div>
             <div class="segments" role="group" aria-label="Bot difficulty">${(['easy', 'medium', 'hard'] as const).map(d => `<button data-difficulty="${d}" class="${s.difficulty === d ? 'selected' : ''}" aria-pressed="${s.difficulty === d}">${d.toUpperCase()}</button>`).join('')}</div>
-            <div class="control-label"><span>PRIMARY WEAPON</span><span>+ USP & UTILITY</span></div>
+            <div class="control-label"><span>PRIMARY WEAPON</span><span>${s.map === 'longshot' ? 'AWP RECOMMENDED' : '+ USP & UTILITY'}</span></div>
             <div class="segments weapons" role="group" aria-label="Primary weapon">${(['ak', 'm4', 'awp'] as const).map(id => `<button data-primary="${id}" class="${s.primary === id ? 'selected' : ''}" aria-pressed="${s.primary === id}"><span class="weapon-glyph">${id === 'awp' ? '━╋━' : '━┳┓'}</span>${WEAPONS[id].name}</button>`).join('')}</div>
             <div class="squad-note"><span class="status-dot"></span> YOU + 4 ALLIES <span>VS</span> 5 ENEMY BOTS</div>
             <button class="deploy-button" id="deploy"><span>DEPLOY TO ${s.map.toUpperCase()}</span>${arrow}</button>

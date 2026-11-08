@@ -50,6 +50,6 @@ export function shotSpread(base: number, speed: number, airborne: boolean, crouc
   return base * (crouch ? .65 : 1) + speed * .0035 + (airborne ? .055 : 0) + Math.min(shots, 12) * .0011 + (unscoped ? .075 : 0);
 }
 
-export function damageAtRange(damage: number, distance: number, head: boolean, multiplier: number) {
-  return Math.max(1, Math.round(damage * (head ? multiplier : 1) * Math.max(.7, 1 - distance / 450)));
+export function damageAtRange(damage: number, distance: number, head: boolean, multiplier: number, falloff = 450) {
+  return Math.max(1, Math.round(damage * (head ? multiplier : 1) * Math.max(.7, 1 - distance / falloff)));
 }

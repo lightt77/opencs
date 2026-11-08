@@ -26,7 +26,8 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
       const d = distance(actor.position, enemy.position);
       const angle = Math.atan2(actor.position.x - enemy.position.x, actor.position.z - enemy.position.z);
       const inView = d < 5 || Math.abs(angleDelta(actor.yaw, angle)) < 1.25;
-      if (d > 52 || !inView || actor.flash > .3 || !game.visible(actor.position, enemy.position)) continue;
+      const sight = actor.weapon === 'awp' ? (game.nav.arena.sniperSight ?? 52) : 52;
+      if (d > sight || !inView || actor.flash > .3 || !game.visible(actor.position, enemy.position)) continue;
       const score = d - (enemy.id === brain.target ? 5 : 0);
       if (score < best) { best = score; target = enemy; }
     }
@@ -62,7 +63,8 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
     actor.pitch += (desiredPitch - actor.pitch) * Math.min(1, dt * skill.tracking);
 
     if (game.time - brain.acquired > skill.reaction && Math.abs(angleDelta(actor.yaw, desiredYaw)) < .13 && brain.pause <= 0 && actor.reload <= 0) {
-      const error = skill.error * (actor.weapon === 'awp' ? .5 : 1) * (1 + actor.speed * .11);
+      const sniperScale = actor.weapon === 'awp' ? .5 * Math.min(1, 40 / Math.max(1, d)) : 1;
+      const error = skill.error * sniperScale * (1 + actor.speed * .11);
       const yaw = actor.yaw + (Math.random() - .5) * error * 2;
       const pitch = actor.pitch + (Math.random() - .5) * error * 2;
       const ready = actor.cooldown <= 0 && actor.switching <= 0;
@@ -76,6 +78,10 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
     // Fire from a planted stance, then take a short lateral step between bursts.
     if (brain.pause > 0 && actor.weapon !== 'awp') {
       const side = Math.sin(game.time * .7 + actor.id) > 0 ? 1 : -1;
+      moveX = Math.cos(actor.yaw) * side; moveZ = -Math.sin(actor.yaw) * side;
+    }
+    if (actor.weapon === 'awp' && brain.role === 'flank' && game.nav.arena.id === 'longshot' && actor.cooldown > .45) {
+      const side = actor.id % 2 ? 1 : -1;
       moveX = Math.cos(actor.yaw) * side; moveZ = -Math.sin(actor.yaw) * side;
     }
     if (actor.weapon === 'knife') {
@@ -94,7 +100,7 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
 
   const holdingAngle = !targetVisible && actor.reload <= 0 && brain.hold > game.time;
   if (holdingAngle) {
-    const point = brain.memory?.point ?? { x: 0, z: actor.team === 'blue' ? -28 : 28 };
+    const point = brain.memory?.point ?? game.nav.arena[actor.team === 'blue' ? 'red' : 'blue'][0];
     const yaw = Math.atan2(actor.position.x - point.x, actor.position.z - point.z) + Math.sin(game.time * 1.4) * .3;
     actor.yaw += angleDelta(actor.yaw, yaw) * Math.min(1, dt * 5);
   }
@@ -105,7 +111,10 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
       let goal: Point;
       if (memory && distance(actor.position, memory) > 3) {
         goal = { ...memory };
-        if (brain.role === 'flank' && distance(actor.position, memory) > 12) goal.x = clamp(goal.x + (actor.id % 2 ? 8 : -8), -25, 25);
+        if (brain.role === 'flank' && distance(actor.position, memory) > 12) {
+          const edge = game.nav.arena.width / 2 - 4;
+          goal.x = clamp(goal.x + (actor.id % 2 ? 8 : -8), -edge, edge);
+        }
       } else {
         // Routes and enemy spawn are map knowledge, not knowledge of unseen enemies.
         const options = [...routes, ...game.nav.arena[actor.team === 'blue' ? 'red' : 'blue']].filter(p => distance(actor.position, p) > 3);

@@ -16,7 +16,7 @@ describe('saved settings', () => {
     expect(loadSettings()).toMatchObject({ movementSpeed: 1, jumpGravity: 20 });
   });
   it('restores valid custom movement values', () => {
-    stored({ movementSpeed: 1.5, jumpGravity: 14, doubleJump: true });
-    expect(loadSettings()).toMatchObject({ movementSpeed: 1.5, jumpGravity: 14, doubleJump: true });
+    stored({ movementSpeed: 1.5, jumpGravity: 14, doubleJump: true, map: 'longshot' });
+    expect(loadSettings()).toMatchObject({ movementSpeed: 1.5, jumpGravity: 14, doubleJump: true, map: 'longshot' });
   });
 });

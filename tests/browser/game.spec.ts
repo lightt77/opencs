@@ -250,3 +250,33 @@ test('custom movement speed and double jump apply to live physics', async ({ pag
   await page.keyboard.press('Space');
   expect(await page.evaluate(() => window.__OPENCS__.player.jumpsUsed)).toBe(2);
 });
+
+test('Longshot renders beyond 370 metres and supports long-range sniper hits', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await open(page); await page.getByRole('button', { name: 'LONGSHOT RANGE', exact: true }).click();
+  await page.locator('[data-primary="awp"]').click(); await deploy(page, true);
+  const result = await page.evaluate(() => {
+    const g = window.__OPENCS__, p = g.player, enemy = g.actors[5];
+    const spawnDistance = p.position.distanceTo(enemy.position);
+    const visible = g.visible(p.position, enemy.position);
+    p.switching = 0; p.immunity = 0; enemy.immunity = 0;
+    const target = enemy.position.clone(); target.y += 1.13;
+    g.shoot(p, target.sub(p.eye()).normalize());
+    return { width: g.arena.width, depth: g.arena.depth, spawnDistance, visible, far: g.view.camera.far, killed: !enemy.alive, botWeapons: g.actors.slice(1).every(a => a.primary === 'awp') };
+  });
+  expect(result).toMatchObject({ width: 320, depth: 420, visible: true, killed: true, botWeapons: true });
+  expect(result.spawnDistance).toBeGreaterThan(360); expect(result.far).toBeGreaterThan(600);
+  await page.evaluate(() => {
+    const g = window.__OPENCS__; g.phase = 'live'; g.recoilPitch = 0; g.recoilYaw = 0; g.player.pitch = 0; g.player.yaw = 0;
+  });
+  await page.mouse.down({ button: 'right' }); await page.mouse.up({ button: 'right' }); await expect(page.locator('#scope')).toBeVisible();
+  expect(await page.evaluate(() => window.__OPENCS__.view.camera.fov)).toBe(12);
+  await page.screenshot({ path: 'test-results/longshot.png' });
+  expect(await page.evaluate(() => {
+    const g = window.__OPENCS__;
+    for (const actor of g.actors) actor.brain.decision = 0;
+    g.update(1 / 60);
+    return g.actors.slice(5).some(a => a.brain.target >= 0);
+  })).toBe(true);
+  expect(errors).toEqual([]);
+});

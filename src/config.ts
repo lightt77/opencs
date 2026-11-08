@@ -1,7 +1,7 @@
 export type Team = 'blue' | 'red';
 export type Mode = 'tdm' | 'elimination';
 export type Difficulty = 'easy' | 'medium' | 'hard';
-export type MapId = 'dust' | 'snow' | 'india';
+export type MapId = 'dust' | 'snow' | 'india' | 'longshot';
 export type WeaponId = 'ak' | 'm4' | 'awp' | 'pistol' | 'knife' | 'he' | 'flash' | 'smoke';
 export type Primary = 'ak' | 'm4' | 'awp';
 
@@ -21,7 +21,7 @@ export function loadSettings(): Settings {
   try {
     const raw = JSON.parse(localStorage.getItem('opencs.settings') ?? '{}');
     return {
-      map: ['dust', 'snow', 'india'].includes(raw.map) ? raw.map : DEFAULTS.map,
+      map: ['dust', 'snow', 'india', 'longshot'].includes(raw.map) ? raw.map : DEFAULTS.map,
       mode: ['tdm', 'elimination'].includes(raw.mode) ? raw.mode : DEFAULTS.mode,
       difficulty: ['easy', 'medium', 'hard'].includes(raw.difficulty) ? raw.difficulty : DEFAULTS.difficulty,
       primary: ['ak', 'm4', 'awp'].includes(raw.primary) ? raw.primary : DEFAULTS.primary,
@@ -44,12 +44,13 @@ export interface WeaponSpec {
   name: string; short: string; damage: number; head: number; interval: number;
   magazine: number; reserve: number; reload: number; spread: number;
   recoil: number; speed: number; automatic: boolean; range: number;
+  falloff?: number;
 }
 
 export const WEAPONS: Record<WeaponId, WeaponSpec> = {
   ak: { name: 'AK-47', short: 'AK', damage: 35, head: 3.2, interval: .105, magazine: 30, reserve: 90, reload: 2.35, spread: .002, recoil: .013, speed: 5.6, automatic: true, range: 110 },
   m4: { name: 'M4A1', short: 'M4', damage: 30, head: 3.2, interval: .09, magazine: 30, reserve: 90, reload: 2.15, spread: .0015, recoil: .009, speed: 5.7, automatic: true, range: 110 },
-  awp: { name: 'AWP', short: 'AWP', damage: 115, head: 2, interval: 1.35, magazine: 5, reserve: 20, reload: 3.1, spread: .0008, recoil: .027, speed: 4.8, automatic: false, range: 140 },
+  awp: { name: 'AWP', short: 'AWP', damage: 115, head: 2, interval: 1.35, magazine: 5, reserve: 20, reload: 3.1, spread: .0008, recoil: .027, speed: 4.8, automatic: false, range: 700, falloff: 6000 },
   pistol: { name: 'USP', short: 'USP', damage: 26, head: 3, interval: .22, magazine: 12, reserve: 48, reload: 1.65, spread: .003, recoil: .014, speed: 6, automatic: false, range: 80 },
   knife: { name: 'FIELD KNIFE', short: 'KNIFE', damage: 55, head: 1, interval: .48, magazine: 1, reserve: 0, reload: 0, spread: 0, recoil: 0, speed: 6.5, automatic: false, range: 2.3 },
   he: { name: 'HE GRENADE', short: 'HE', damage: 95, head: 1, interval: 1, magazine: 1, reserve: 0, reload: 0, spread: 0, recoil: 0, speed: 6, automatic: false, range: 25 },

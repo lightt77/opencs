@@ -90,7 +90,7 @@ export class Game {
     const names = ['YOU', 'Kestrel', 'Moss', 'Rook', 'Echo', 'Viper', 'Ash', 'Ghost', 'Flint', 'Cinder'];
     this.actors = names.map((name, id) => {
       const team = id < 5 ? 'blue' : 'red';
-      const primary = id === 0 ? settings.primary : this.arena.id === 'india' ? (id % 3 === 0 ? 'm4' : 'awp') : id % 4 === 0 ? 'awp' : id % 2 === 0 ? 'm4' : 'ak';
+      const primary = id === 0 ? settings.primary : this.arena.id === 'longshot' ? 'awp' : this.arena.id === 'india' ? (id % 3 === 0 ? 'm4' : 'awp') : id % 4 === 0 ? 'awp' : id % 2 === 0 ? 'm4' : 'ak';
       const actor = new Actor(id, name, team, id === 0, primary, this.physics!.character(this.arena[team][id % 5]));
       this.view.scene.add(actor.model.root); return actor;
     });
@@ -237,7 +237,9 @@ export class Game {
     this.physics!.world.step();
     for (const actor of this.actors) {
       if (actor.alive) actor.sync();
-      actor.model.animate(dt, this.time + actor.id * .5, actor.alive && this.phase === 'live' ? actor.speed : 0, actor.alive, actor.reload > 0);
+      const moving = actor.alive && this.phase === 'live';
+      const motion = { x: moving ? (actor.position.x - actor.previousPosition.x) / dt : 0, z: moving ? (actor.position.z - actor.previousPosition.z) / dt : 0 };
+      actor.model.animate(dt, motion, actor.alive, actor.reload > 0, actor.body.grounded, actor.body.crouched);
     }
     for (const smoke of this.smokes) smoke.life -= dt;
     this.smokes = this.smokes.filter(s => s.life > 0);
@@ -300,7 +302,7 @@ export class Game {
       if (id === 'awp') this.scoped = false;
     }
     this.sound.shot(id, actor.human ? undefined : actor.position);
-    this.hear(actor, id === 'knife' ? 5 : 38);
+    this.hear(actor, id === 'knife' ? 5 : id === 'awp' ? 150 : 38);
     const origin = actor.eye();
     this.ray.set(origin, direction.normalize()); this.ray.far = spec.range;
     this.view.scene.updateMatrixWorld(true);
@@ -320,7 +322,7 @@ export class Game {
     const head = hit.object.userData.head === true && id !== 'knife';
     this.view.impact(hit.point, !!victim);
     if (victim && victim.team !== actor.team && victim.immunity <= 0) {
-      const amount = damageAtRange(spec.damage, hit.distance, head, spec.head);
+      const amount = damageAtRange(spec.damage, hit.distance, head, spec.head, spec.falloff);
       this.damage(victim, amount, actor, id, head);
       if (actor.human) { this.hitTime = this.time; this.hitHead = head; this.sound.hit(head); }
     }
@@ -463,7 +465,8 @@ export class Game {
     const camera = this.view.camera;
     if (this.screen === 'menu' || !this.player) {
       const angle = this.renderTime * .025;
-      camera.position.set(24 * Math.cos(angle), 18, 27 * Math.sin(angle) + 9); camera.lookAt(0, 0, -3);
+      const scale = Math.max(this.arena.width, this.arena.depth) / 66;
+      camera.position.set(24 * scale * Math.cos(angle), 18 * scale, (27 * Math.sin(angle) + 9) * scale); camera.lookAt(0, 0, -3 * scale);
       camera.fov = 65; camera.updateProjectionMatrix(); return;
     }
     const p = this.player;
@@ -489,7 +492,7 @@ export class Game {
         this.spectating = '';
       }
     }
-    const fov = this.scoped && p.alive ? 24 : this.settings.fov;
+    const fov = this.scoped && p.alive ? (this.arena.scopeFov ?? 24) : this.settings.fov;
     if (Math.abs(camera.fov - fov) > .01) { camera.fov = fov; camera.updateProjectionMatrix(); }
     this.view.equip(p.weapon);
     const reload = p.reload > 0 ? 1 - p.reload / WEAPONS[p.weapon].reload : 0;
