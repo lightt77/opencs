@@ -4,7 +4,7 @@ import type { Actor } from '../../src/actor';
 
 type DiagnosticGame = Omit<Game, never> & {
   update(dt: number): void;
-  damage(victim: Actor, amount: number, attacker: Actor, weapon: 'ak'): void;
+  damage(victim: Actor, amount: number, attacker: Actor, weapon: 'ak', head?: boolean): void;
   updateGrenades(dt: number): void;
   botGrenade(actor: Actor, type: 'he' | 'flash' | 'smoke', point: { x: number; z: number }): void;
 };
@@ -301,4 +301,51 @@ test('sound packs can be previewed, saved, restored and reset independently of m
   await page.getByRole('button', { name: 'Close settings' }).click();
   await expect(page.locator('[data-map="longshot"]')).toHaveAttribute('aria-pressed', 'true');
   expect(errors).toEqual([]);
+});
+
+test('damage popups report actual damage, distinguish headshots, and expire', async ({ page }) => {
+  await open(page); await page.getByRole('button', { name: 'INDIA COURT', exact: true }).click(); await deploy(page, true);
+  await page.evaluate(() => {
+    const g = window.__OPENCS__, p = g.player, enemy = g.actors[5];
+    for (const actor of g.actors) { actor.alive = false; actor.respawn = 1000; actor.body.enabled(false); }
+    g.phase = 'live'; p.reset({ x: 0, z: 28 }, 0); enemy.reset({ x: 0, z: 23 }, 0);
+    enemy.brain.decision = 1e6; enemy.brain.hold = 1e6;
+    p.switching = 0; p.pitch = 0; p.yaw = 0;
+    const target = enemy.position.clone(); target.y += 1.13;
+    g.shoot(p, target.sub(p.eye()).normalize());
+  });
+  await expect(page.locator('.damage-number[data-damage="35"]')).toBeVisible();
+  const lethal = await page.evaluate(() => {
+    const g = window.__OPENCS__, enemy = g.actors[5]; enemy.health = 10;
+    g.damage(enemy, 200, g.player, 'ak', true);
+    const last = g.damagePopups.at(-1)!;
+    return { amount: last.amount, head: last.head, killed: last.killed };
+  });
+  expect(lethal).toEqual({ amount: 10, head: true, killed: true });
+  await expect(page.locator('.damage-number.is-headshot[data-damage="10"]')).toBeVisible();
+  await page.evaluate(() => { for (let i = 0; i < 65; i++) window.__OPENCS__.update(1 / 60); });
+  await expect(page.locator('.damage-number')).toHaveCount(0);
+});
+
+test('intermission waits for a new loadout and preserves round score', async ({ page }) => {
+  await open(page); await page.getByRole('button', { name: 'SNOW OUTPOST', exact: true }).click();
+  await page.locator('[data-mode="elimination"]').click(); await deploy(page, true);
+  await page.evaluate(() => {
+    const g = window.__OPENCS__;
+    for (let i = 0; i < 190; i++) g.update(1 / 60);
+    for (const enemy of g.actors.filter(a => a.team === 'red')) g.damage(enemy, 200, g.player, 'ak');
+    g.update(1 / 60);
+  });
+  await expect(page.getByRole('heading', { name: 'NEXT ROUND LOADOUT' })).toBeVisible();
+  const time = await page.evaluate(() => window.__OPENCS__.time);
+  await page.locator('[data-round-primary="awp"]').click();
+  expect(await page.evaluate(() => window.__OPENCS__.time)).toBe(time);
+  expect(await page.evaluate(() => window.__OPENCS__.player.primary)).toBe('ak');
+  await page.getByRole('button', { name: 'START ROUND 2' }).click();
+  await expect(page.locator('#weapon-name')).toHaveText('AWP');
+  const result = await page.evaluate(() => {
+    const g = window.__OPENCS__;
+    return { round: g.round, score: g.scores.blue, kills: g.player.kills, primary: g.player.primary, clip: g.player.ammo.awp.clip, rejectedLiveChange: !g.continueRound('m4') };
+  });
+  expect(result).toEqual({ round: 2, score: 1, kills: 5, primary: 'awp', clip: 5, rejectedLiveChange: true });
 });

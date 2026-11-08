@@ -3,7 +3,7 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import { Actor } from './actor';
 import { Sound } from './audio';
 import { updateBot, type BotContext } from './bots';
-import { DEFAULTS, FIXED_DT, MATCH_SECONDS, ROUND_LIMIT, ROUND_SECONDS, TDM_LIMIT, WEAPONS, isGrenade, type Settings, type Team, type WeaponId } from './config';
+import { DEFAULTS, FIXED_DT, MATCH_SECONDS, ROUND_LIMIT, ROUND_SECONDS, TDM_LIMIT, WEAPONS, isGrenade, type Primary, type Settings, type Team, type WeaponId } from './config';
 import { MAPS, type Arena } from './maps';
 import { angleDelta, clamp, damageAtRange, distance, groundVelocity, segmentCircle, shotSpread, type Point } from './math';
 import { block, disposeTree } from './models';
@@ -15,7 +15,8 @@ import { verticalMotion } from './movement';
 export interface Kill { killer: string; victim: string; team: Team; weapon: WeaponId; head: boolean; time: number }
 interface Grenade { body: RAPIER.RigidBody; mesh: THREE.Object3D; owner: Actor; type: 'he' | 'flash' | 'smoke'; fuse: number }
 interface Smoke { point: Point; life: number }
-export type Screen = 'menu' | 'playing' | 'paused' | 'finished';
+export interface DamagePopup { id: number; amount: number; head: boolean; killed: boolean; point: THREE.Vector3; time: number }
+export type Screen = 'menu' | 'playing' | 'paused' | 'loadout' | 'finished';
 
 export class Game {
   view: View;
@@ -34,6 +35,8 @@ export class Game {
   round = 1;
   scores = { blue: 0, red: 0 };
   kills: Kill[] = [];
+  damagePopups: DamagePopup[] = [];
+  private nextDamageId = 0;
   winner: Team | 'draw' = 'draw';
   announcement = '';
   announcementTime = 0;
@@ -108,6 +111,7 @@ export class Game {
     this.physics!.world.step();
     this.scoped = false; this.recoilPitch = this.recoilYaw = this.kick = 0;
     this.eyeY = 1.56; this.lastDamage = this.hitTime = -100;
+    this.damagePopups = [];
   }
 
   private cleanup() {
@@ -115,6 +119,7 @@ export class Game {
     for (const actor of this.actors) { this.view.scene.remove(actor.model.root); disposeTree(actor.model.root); }
     this.actors = []; this.physics?.dispose(); this.physics = undefined;
     this.view.clearEffects(); this.smokes = []; this.intel = {};
+    this.damagePopups = [];
   }
 
   toMenu() {
@@ -131,7 +136,15 @@ export class Game {
     void this.sound.unlock(); this.screen = 'playing'; this.clearInput(); this.onScreenChange?.(); this.capture();
   }
 
+  continueRound(primary: Primary) {
+    if (this.screen !== 'loadout' || this.phase !== 'between' || !['ak', 'm4', 'awp'].includes(primary)) return false;
+    this.player.primary = primary; this.settings.primary = primary;
+    this.phaseTime = 0; this.screen = 'playing'; this.clearInput();
+    this.onScreenChange?.(); this.capture(); return true;
+  }
+
   private capture() {
+    if (document.pointerLockElement === this.view.canvas) return;
     try {
       const request = this.view.canvas.requestPointerLock();
       if (request) void request.catch(() => this.pause());
@@ -192,7 +205,7 @@ export class Game {
     this.renderTime += dt;
     if (this.screen === 'playing') {
       this.accumulator += dt;
-      while (this.accumulator >= FIXED_DT) { this.update(FIXED_DT); this.accumulator -= FIXED_DT; }
+      while (this.screen === 'playing' && this.accumulator >= FIXED_DT) { this.update(FIXED_DT); this.accumulator -= FIXED_DT; }
       this.view.updateEffects(dt);
     } else this.accumulator = 0;
     this.camera(dt);
@@ -203,6 +216,7 @@ export class Game {
 
   private update(dt: number) {
     this.time += dt; this.announcementTime = Math.max(0, this.announcementTime - dt);
+    this.damagePopups = this.damagePopups.filter(popup => this.time - popup.time < .95);
     this.kick = Math.max(0, this.kick - dt * 6);
     this.shotFlash = Math.max(0, this.shotFlash - dt);
     this.recoilPitch *= Math.exp(-dt * 6); this.recoilYaw *= Math.exp(-dt * 7);
@@ -331,7 +345,13 @@ export class Game {
 
   private damage(victim: Actor, amount: number, attacker: Actor, weapon: WeaponId, head = false) {
     if (!victim.alive || victim.immunity > 0) return;
-    victim.health = Math.max(0, victim.health - amount);
+    const dealt = Math.min(victim.health, Math.max(0, Math.round(amount)));
+    if (dealt === 0) return;
+    victim.health -= dealt;
+    if (attacker.human && victim.team !== attacker.team) {
+      this.damagePopups.push({ id: ++this.nextDamageId, amount: dealt, head, killed: victim.health === 0, point: victim.position.clone().add(new THREE.Vector3(0, 1.95, 0)), time: this.time });
+      this.damagePopups = this.damagePopups.slice(-24);
+    }
     if (victim.human) {
       this.lastDamage = this.time;
       this.damageDirection = angleDelta(victim.yaw, Math.atan2(victim.position.x - attacker.position.x, victim.position.z - attacker.position.z));
@@ -453,6 +473,7 @@ export class Game {
       }
       this.phase = 'between'; this.phaseTime = 4;
       this.announce(winner === 'draw' ? 'ROUND DRAW' : `${winner.toUpperCase()} TEAM TAKES THE ROUND`, 4);
+      this.screen = 'loadout'; this.clearInput(); this.release(); this.onScreenChange?.();
     }
   }
 

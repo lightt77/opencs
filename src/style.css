@@ -35,5 +35,11 @@
 .pack-select{display:block;width:100%;background:#101c15;color:#d2ddc6;border:1px solid #a2b68b50;font:11px monospace;letter-spacing:1px;padding:12px;cursor:pointer}
 .pack-description{font:10px/1.6 monospace;color:#91a184;min-height:33px;margin:10px 0}
 .preview-sound{width:100%;margin-bottom:28px;padding:10px;font-size:8px}
+.damage-numbers{position:absolute;inset:0;z-index:3;overflow:hidden;pointer-events:none}
+.damage-number{position:absolute;left:0;top:0;font:600 27px var(--heading);color:#f0efdc;text-shadow:0 2px 3px #08120d,0 0 8px #08120d;will-change:transform,opacity}
+.damage-number.is-lethal{color:#e9a28a;font-size:31px}
+.damage-number.is-headshot{color:var(--amber)}
+.round-loadout{width:510px}.round-loadout .weapons button{padding:20px 8px;font-size:12px}
+.dialog .loadout-note{font:10px/1.8 monospace;color:#91a184;margin-bottom:25px}
 @media(max-width:640px){.settings-grid{grid-template-columns:1fr;gap:20px}.settings-dialog{max-height:calc(100dvh - 40px)}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}

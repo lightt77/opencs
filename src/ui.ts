@@ -3,6 +3,7 @@ import { DEFAULTS, ROUND_LIMIT, TDM_LIMIT, WEAPONS, isGrenade, loadSettings, typ
 import { MAPS, type Arena } from './maps';
 import { clamp } from './math';
 import { SOUND_PACKS } from './audio';
+import { Vector3 } from 'three';
 
 const cross = '<svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M16 2v8m0 12v8M2 16h8m12 0h8" stroke="currentColor" stroke-width="3"/><circle cx="16" cy="16" r="3" fill="currentColor"/></svg>';
 const arrow = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.6"/></svg>';
@@ -33,6 +34,8 @@ export class UI {
   private lastBoard = '';
   private minimap: HTMLCanvasElement;
   private hudElements: Record<string, HTMLElement> = {};
+  private popupElements = new Map<number, HTMLElement>();
+  private popupPoint = new Vector3();
 
   constructor(readonly game: Game) {
     this.root = document.querySelector('#app')!;
@@ -133,6 +136,7 @@ export class UI {
       <div class="announcement" id="announcement"></div>
       <div class="crosshair" id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
       <div class="hit-marker" id="hit-marker">╳</div>
+      <div class="damage-numbers" id="damage-numbers" aria-label="Damage dealt"></div>
       <div class="scope" id="scope" hidden><div class="scope-horizontal"></div><div class="scope-vertical"></div><i></i></div>
       <div class="damage-direction" id="damage-direction">⌃</div>
       <div class="death-card" id="death-card" hidden></div>
@@ -154,6 +158,7 @@ export class UI {
     if (screen === 'menu') this.renderMenu();
     if (screen === 'paused') this.pauseHTML();
     if (screen === 'finished') this.results();
+    if (screen === 'loadout') this.roundLoadout();
     this.root.classList.toggle('in-game', screen !== 'menu');
     this.lastBoard = ''; this.lastHUD = 0;
   }
@@ -168,6 +173,30 @@ export class UI {
     this.overlay.querySelector('#pause-settings')!.addEventListener('click', () => this.openSettings());
     this.overlay.querySelector('#pause-controls')!.addEventListener('click', () => this.controls());
     this.overlay.querySelector('#leave')!.addEventListener('click', () => this.game.toMenu());
+  }
+
+  private roundLoadout() {
+    const g = this.game;
+    let selected = this.settings.primary;
+    this.overlay.innerHTML = `<section class="dialog round-loadout" role="dialog" aria-modal="true" aria-labelledby="round-loadout-title">
+      <span class="eyebrow">ROUND ${g.round} COMPLETE · BLUE ${g.scores.blue} : ${g.scores.red} RED</span>
+      <h2 id="round-loadout-title">NEXT ROUND LOADOUT</h2><p>${g.announcement}<br>Choose your primary for round ${g.round + 1}. No rush—the match is waiting.</p>
+      <div class="segments weapons" role="group" aria-label="Next round primary">${(['ak', 'm4', 'awp'] as const).map(id => `<button data-round-primary="${id}" class="${id === selected ? 'selected' : ''}" aria-pressed="${id === selected}">${WEAPONS[id].name}</button>`).join('')}</div>
+      <p class="loadout-note">USP, knife, grenades, and ammunition replenish at round start. Your score is preserved.</p>
+      <button class="deploy-button" id="continue-round"><span>START ROUND ${g.round + 1}</span>${arrow}</button>
+      <button class="text-button exit-button" id="loadout-leave">LEAVE MATCH</button>
+    </section>`;
+    this.overlay.querySelectorAll<HTMLButtonElement>('[data-round-primary]').forEach(button => button.addEventListener('click', () => {
+      selected = button.dataset.roundPrimary as Settings['primary'];
+      this.overlay.querySelectorAll<HTMLButtonElement>('[data-round-primary]').forEach(b => {
+        const active = b.dataset.roundPrimary === selected; b.classList.toggle('selected', active); b.setAttribute('aria-pressed', String(active));
+      });
+    }));
+    this.overlay.querySelector('#continue-round')!.addEventListener('click', () => {
+      if (g.continueRound(selected)) { this.settings.primary = selected; this.save(); }
+    });
+    this.overlay.querySelector('#loadout-leave')!.addEventListener('click', () => g.toMenu());
+    this.overlay.querySelector<HTMLButtonElement>('[aria-pressed="true"]')!.focus();
   }
 
   private closeDialog() {
@@ -275,6 +304,7 @@ export class UI {
     e['crosshair'].style.setProperty('--gap', `${gap}px`);
     e['hit-marker'].style.opacity = String(Math.max(0, 1 - (g.time - g.hitTime) / .23));
     e['hit-marker'].classList.toggle('headshot', g.hitHead);
+    this.drawDamageNumbers();
     if (performance.now() - this.lastHUD < 85) return;
     this.lastHUD = performance.now();
     this.set('map-name', g.arena.name); this.set('blue-score', String(g.scores.blue)); this.set('red-score', String(g.scores.red));
@@ -305,6 +335,29 @@ export class UI {
     const g = this.game;
     const content = `<div class="scoreboard-heading"><span>${g.arena.name} / ${g.settings.mode === 'tdm' ? 'TEAM DEATHMATCH' : 'ELIMINATION'}</span><span>LOCAL MATCH</span></div><h2>SQUAD STATUS</h2>${(['blue', 'red'] as const).map(team => `<div class="scoreboard-team ${team}-text"><span>${team.toUpperCase()} TEAM</span><span>${g.scores[team]}</span></div><div class="scoreboard-row board-labels"><span>OPERATOR</span><span>K</span><span>D</span><span>STATUS</span></div>${g.actors.filter(a => a.team === team).sort((a, b) => b.kills - a.kills).map(a => `<div class="scoreboard-row ${a.human ? 'is-you' : ''}"><span>${a.name}${a.human ? ' <small>/ YOU</small>' : ''}</span><span>${a.kills}</span><span>${a.deaths}</span><span class="${a.alive ? 'alive' : 'dead'}">${a.alive ? 'ACTIVE' : 'DOWN'}</span></div>`).join('')}`).join('')}<p>HOLD TAB TO VIEW · RELEASE TO CLOSE</p>`;
     if (content !== this.lastBoard) { this.hudElements['scoreboard'].innerHTML = content; this.lastBoard = content; }
+  }
+
+  private drawDamageNumbers() {
+    const g = this.game, live = new Set(g.damagePopups.map(p => p.id));
+    for (const [id, element] of this.popupElements) {
+      if (!live.has(id)) { element.remove(); this.popupElements.delete(id); }
+    }
+    for (const popup of g.damagePopups) {
+      let element = this.popupElements.get(popup.id);
+      if (!element) {
+        element = document.createElement('span');
+        element.className = `damage-number${popup.head ? ' is-headshot' : ''}${popup.killed ? ' is-lethal' : ''}`;
+        element.textContent = `${popup.head ? '⊕ ' : ''}${popup.amount}`;
+        element.dataset.damage = String(popup.amount);
+        this.hudElements['damage-numbers'].append(element); this.popupElements.set(popup.id, element);
+      }
+      const age = g.time - popup.time;
+      this.popupPoint.copy(popup.point); this.popupPoint.y += age * .55; this.popupPoint.project(g.view.camera);
+      const inView = this.popupPoint.z > -1 && this.popupPoint.z < 1 && Math.abs(this.popupPoint.x) < 1.1 && Math.abs(this.popupPoint.y) < 1.1;
+      element.hidden = !inView;
+      element.style.opacity = String(clamp((.95 - age) / .4, 0, 1));
+      element.style.transform = `translate(${(this.popupPoint.x * .5 + .5) * innerWidth + (popup.id % 3 - 1) * 10}px,${(-this.popupPoint.y * .5 + .5) * innerHeight}px) translate(-50%,-50%)`;
+    }
   }
 
   private drawMinimap() {
