@@ -77,7 +77,9 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
       const side = Math.sin(game.time * .7 + actor.id) > 0 ? 1 : -1;
       moveX = Math.cos(actor.yaw) * side; moveZ = -Math.sin(actor.yaw) * side;
     }
-    if (d < 5) { moveX += Math.sin(actor.yaw); moveZ += Math.cos(actor.yaw); }
+    if (actor.weapon === 'knife') {
+      moveX = d > 1.5 ? delta.x / d : 0; moveZ = d > 1.5 ? delta.z / d : 0;
+    } else if (d < 5) { moveX += Math.sin(actor.yaw); moveZ += Math.cos(actor.yaw); }
     if (actor.health < 35 && brain.repath <= 0) {
       const cover = findCover(actor.position, target.position, game.nav);
       if (cover) { brain.path = game.nav.path(actor.position, cover); brain.goal = cover; brain.repath = 2; }

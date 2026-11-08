@@ -58,7 +58,9 @@ export class View {
     this.scene.background = new THREE.Color(arena.sky);
     this.scene.fog = new THREE.Fog(arena.fog, 35, 115);
     const texture = this.surfaceTexture(arena.id === 'snow');
-    const floorMat = new THREE.MeshStandardMaterial({ color: arena.ground, map: texture, roughness: 1 });
+    const floorTexture = texture.clone(); floorTexture.repeat.set(arena.width / 4, arena.depth / 4);
+    floorTexture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    const floorMat = new THREE.MeshStandardMaterial({ color: arena.ground, map: floorTexture, roughness: 1 });
     const floor = block(this.level, [arena.width, .2, arena.depth], [0, -.1, 0], floorMat);
     floor.castShadow = false; this.solids.push(floor);
     const walls = new THREE.MeshStandardMaterial({ color: arena.wall, map: texture, roughness: .95 });

@@ -48,6 +48,9 @@ export class Game {
   kick = 0;
   shotFlash = 0;
   spectating = '';
+  get smokeOpacity() {
+    return this.smokes.reduce((opacity, smoke) => Math.max(opacity, clamp((4.2 - distance(this.view.camera.position, smoke.point)) * .8, 0, .96) * Math.min(1, smoke.life / 2)), 0);
+  }
   onScreenChange?: () => void;
   onFrame?: () => void;
   private keys = new Set<string>();
@@ -264,7 +267,8 @@ export class Game {
       p.step += dt;
       if (p.step > .38) { p.step = 0; this.footstep(p); }
     }
-    if (this.mouseDown && (WEAPONS[p.weapon].automatic || this.trigger)) {
+    // Preserve quick clicks even when down/up both occur between fixed simulation ticks.
+    if ((this.mouseDown && WEAPONS[p.weapon].automatic) || this.trigger) {
       if (isGrenade(p.weapon)) this.throwPlayerGrenade();
       else {
         const spread = shotSpread(WEAPONS[p.weapon].spread, p.speed, !p.body.grounded, p.body.crouched, p.shots, p.weapon === 'awp' && !this.scoped);
@@ -460,6 +464,7 @@ export class Game {
       camera.fov = 65; camera.updateProjectionMatrix(); return;
     }
     const p = this.player;
+    for (const actor of this.actors) actor.model.root.visible = !actor.human;
     if (p.alive) {
       this.spectating = '';
       const alpha = clamp(this.accumulator / FIXED_DT, 0, 1);
@@ -473,8 +478,12 @@ export class Game {
       const ally = this.actors.find(a => a.team === 'blue' && a.alive);
       if (ally) {
         this.spectating = ally.name;
+        ally.model.root.visible = false;
         const pos = ally.eye(); camera.position.copy(pos);
         camera.rotation.set(ally.pitch, ally.yaw, 0, 'YXZ');
+        this.sound.listen(ally.position.x, ally.position.z, ally.yaw);
+      } else {
+        this.spectating = '';
       }
     }
     const fov = this.scoped && p.alive ? 24 : this.settings.fov;
