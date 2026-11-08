@@ -4,17 +4,20 @@ export type Difficulty = 'easy' | 'medium' | 'hard';
 export type MapId = 'dust' | 'snow' | 'india' | 'longshot';
 export type WeaponId = 'ak' | 'm4' | 'awp' | 'pistol' | 'knife' | 'he' | 'flash' | 'smoke';
 export type Primary = 'ak' | 'm4' | 'awp';
+export type SoundPack = 'classic' | 'punchy' | 'suppressed';
 
 export interface Settings {
   map: MapId; mode: Mode; difficulty: Difficulty; primary: Primary;
   sensitivity: number; volume: number; fov: number; shadows: boolean;
   movementSpeed: number; doubleJump: boolean; jumpGravity: number;
+  soundPack: SoundPack;
 }
 
 export const DEFAULTS: Settings = {
   map: 'dust', mode: 'tdm', difficulty: 'medium', primary: 'ak',
   sensitivity: 1, volume: 65, fov: 85, shadows: true,
   movementSpeed: 1, doubleJump: false, jumpGravity: 20,
+  soundPack: 'classic',
 };
 
 export function loadSettings(): Settings {
@@ -32,6 +35,7 @@ export function loadSettings(): Settings {
       movementSpeed: finiteRange(raw.movementSpeed, .5, 2, DEFAULTS.movementSpeed),
       doubleJump: typeof raw.doubleJump === 'boolean' ? raw.doubleJump : DEFAULTS.doubleJump,
       jumpGravity: finiteRange(raw.jumpGravity, 10, 35, DEFAULTS.jumpGravity),
+      soundPack: ['classic', 'punchy', 'suppressed'].includes(raw.soundPack) ? raw.soundPack : DEFAULTS.soundPack,
     };
   } catch { return { ...DEFAULTS }; }
 }

@@ -280,3 +280,25 @@ test('Longshot renders beyond 370 metres and supports long-range sniper hits', a
   })).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test('sound packs can be previewed, saved, restored and reset independently of match setup', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await open(page); await page.getByRole('button', { name: 'LONGSHOT RANGE', exact: true }).click();
+  await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+  for (const pack of ['classic', 'punchy', 'suppressed']) {
+    await page.locator('#soundPack').selectOption(pack);
+    await page.getByRole('button', { name: /PREVIEW .* GUNSHOT/ }).click();
+    expect(await page.evaluate(() => window.__OPENCS__.sound.pack)).toBe(pack);
+  }
+  await page.screenshot({ path: 'test-results/settings.png' });
+  await page.getByRole('button', { name: 'Close settings' }).click(); await page.reload();
+  await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+  await expect(page.locator('#soundPack')).toHaveValue('suppressed');
+  await page.getByRole('button', { name: 'RESTORE DEFAULTS' }).click();
+  await expect(page.locator('#soundPack')).toHaveValue('classic');
+  await expect(page.locator('#movementSpeed')).toHaveValue('1'); await expect(page.locator('#jumpGravity')).toHaveValue('20');
+  await expect(page.locator('#doubleJump')).not.toBeChecked();
+  await page.getByRole('button', { name: 'Close settings' }).click();
+  await expect(page.locator('[data-map="longshot"]')).toHaveAttribute('aria-pressed', 'true');
+  expect(errors).toEqual([]);
+});

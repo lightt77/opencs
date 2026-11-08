@@ -2,6 +2,7 @@ import type { Game } from './game';
 import { DEFAULTS, ROUND_LIMIT, TDM_LIMIT, WEAPONS, isGrenade, loadSettings, type Settings } from './config';
 import { MAPS, type Arena } from './maps';
 import { clamp } from './math';
+import { SOUND_PACKS } from './audio';
 
 const cross = '<svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M16 2v8m0 12v8M2 16h8m12 0h8" stroke="currentColor" stroke-width="3"/><circle cx="16" cy="16" r="3" fill="currentColor"/></svg>';
 const arrow = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.6"/></svg>';
@@ -50,7 +51,7 @@ export class UI {
         event.preventDefault(); this.closeDialog();
       }
       if (event.code === 'Tab') {
-        const focusable = [...this.overlay.querySelectorAll<HTMLElement>('button, input, a[href]')];
+        const focusable = [...this.overlay.querySelectorAll<HTMLElement>('button, input, select, a[href]')];
         const first = focusable[0], last = focusable.at(-1);
         if (event.shiftKey && (document.activeElement === first || !this.overlay.contains(document.activeElement))) { event.preventDefault(); last?.focus(); }
         else if (!event.shiftKey && (document.activeElement === last || !this.overlay.contains(document.activeElement))) { event.preventDefault(); first?.focus(); }
@@ -186,6 +187,10 @@ export class UI {
       <p class="settings-hint">Speed applies to both teams. Lower gravity makes jumps higher and floatier. Grenade gravity is unchanged.</p>
       </section><section aria-labelledby="audio-video-title"><h3 id="audio-video-title">AUDIO & VIDEO</h3>
       <label class="slider-label" for="volume">MASTER VOLUME <output>${s.volume}%</output></label><input id="volume" type="range" min="0" max="100" value="${s.volume}" />
+      <label class="slider-label" for="soundPack">GUNSHOT SOUND PACK</label>
+      <select id="soundPack" class="pack-select">${Object.entries(SOUND_PACKS).map(([id, pack]) => `<option value="${id}" ${s.soundPack === id ? 'selected' : ''}>${pack.name}</option>`).join('')}</select>
+      <p class="pack-description" id="pack-description">${SOUND_PACKS[s.soundPack].description}</p>
+      <button class="secondary-button preview-sound" id="preview-sound">▶ PREVIEW ${WEAPONS[s.primary].name} GUNSHOT</button>
       <label class="slider-label" for="fov">FIELD OF VIEW <output>${s.fov}°</output></label><input id="fov" type="range" min="70" max="105" value="${s.fov}" />
       <label class="checkbox-label"><span>SOFT SHADOWS <small>Turn off for a lighter GPU workload.</small></span><input id="shadows" type="checkbox" ${s.shadows ? 'checked' : ''} /></label>
       </section></div>
@@ -205,8 +210,14 @@ export class UI {
         this.settings[key] = (event.target as HTMLInputElement).checked; this.applySettings();
       });
     }
+    this.overlay.querySelector('#soundPack')!.addEventListener('change', event => {
+      this.settings.soundPack = (event.target as HTMLSelectElement).value as Settings['soundPack'];
+      this.overlay.querySelector('#pack-description')!.textContent = SOUND_PACKS[this.settings.soundPack].description;
+      this.applySettings();
+    });
+    this.overlay.querySelector('#preview-sound')!.addEventListener('click', () => { void this.game.sound.preview(this.settings.primary); });
     this.overlay.querySelector('#reset-settings')!.addEventListener('click', () => {
-      Object.assign(this.settings, { sensitivity: DEFAULTS.sensitivity, volume: DEFAULTS.volume, fov: DEFAULTS.fov, shadows: DEFAULTS.shadows, movementSpeed: DEFAULTS.movementSpeed, doubleJump: DEFAULTS.doubleJump, jumpGravity: DEFAULTS.jumpGravity });
+      Object.assign(this.settings, { sensitivity: DEFAULTS.sensitivity, volume: DEFAULTS.volume, fov: DEFAULTS.fov, shadows: DEFAULTS.shadows, movementSpeed: DEFAULTS.movementSpeed, doubleJump: DEFAULTS.doubleJump, jumpGravity: DEFAULTS.jumpGravity, soundPack: DEFAULTS.soundPack });
       this.applySettings(); this.openSettings();
     });
     this.overlay.querySelector('.close-button')!.addEventListener('click', () => this.closeDialog());
@@ -216,6 +227,7 @@ export class UI {
   private applySettings() {
     this.save(); Object.assign(this.game.settings, this.settings);
     this.game.sound.volume = this.settings.volume / 100;
+    this.game.sound.pack = this.settings.soundPack;
     this.game.view.renderer.shadowMap.enabled = this.settings.shadows;
   }
 

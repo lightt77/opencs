@@ -22,10 +22,11 @@ npm run test:browser # Real Chromium integration tests, including pointer lock
 
 - Five-on-five: you and four allied bots versus five enemy bots.
 - Team deathmatch and round-based elimination, without an economy or bomb objective.
-- Dust, Snow, and India: compact, original maps inspired by classic arena themes, not replicas.
+- Dust, Snow, and India: compact, original maps inspired by classic arena themes, not replicas. Longshot Range: a 320 × 420 m open sniper arena with 370 m spawn sightlines and scattered flank cover.
 - AK, M4, AWP, pistol, knife, HE, flash, and smoke.
 - Easy / medium / hard bots with perception, navigation, cover, and shared last-known enemy positions.
 - Locally saved preferences; entirely local matches.
+- Movement-speed and jump-gravity sliders, optional double jump, and three selectable gunshot sound packs.
 
 ## Controls
 
@@ -37,8 +38,22 @@ npm run test:browser # Real Chromium integration tests, including pointer lock
 | Primary / pistol / knife | 1 / 2 / 3 |
 | HE / flash / smoke | 4 / 5 / 6 |
 | Cycle weapons | Mouse wheel |
+| Previous weapon / faster AWP cycle | Q / Q Q after firing |
 | Scoreboard | Hold Tab |
 | Pause / release mouse | Esc |
+
+### Movement and sound preferences
+
+Open **Settings** from the lobby or pause menu. Changes apply immediately and persist locally.
+
+- **Movement speed:** 0.5–2.0×, applied to the player and both bot teams.
+- **Double jump:** off by default. When enabled, press Space again in the air for one extra jump; landing replenishes it. Walking off an edge allows one air jump, not two.
+- **Jump gravity:** 10–35 m/s² (default 20). Lower values mean higher, floatier jumps. Grenade gravity is unchanged.
+- **Gunshot packs:** Classic (dry/metallic), Punchy (sharp attack and bass tail), and Suppressed (soft/filtered). Use **Preview gunshot** to compare your selected primary weapon. Packs affect both teams and are original procedural sounds, not sampled CS audio. The suppressed pack is cosmetic: bot hearing and weapon balance do not change.
+
+**AWP quick-switch:** Q swaps to the last equipped weapon (USP initially). Tap Q twice after a shot to switch away and back, reducing bolt recovery from 1.35 s to a minimum 0.7 s. Each quick draw takes 0.12 s. This does not replenish ammunition or bypass an empty magazine, and switching cancels an unfinished reload. Other weapons keep independent firing cooldowns.
+
+**Longshot Range:** choose an AWP for the 370 m opening sightline. Bots use sniper rifles, respect cover, and can perceive visible targets across the map. The AWP has a 700 m hitscan range, gentler damage falloff, and a stronger 12° scope on Longshot; rifle and pistol ranges are unchanged. The larger arena has appropriately extended rendering/fog distances and a coarser navigation grid to keep pathfinding lightweight.
 
 ## Development
 
@@ -57,6 +72,7 @@ Fonts are bundled locally (Barlow and Barlow Condensed, SIL Open Font License vi
 | `src/view.ts`, `src/models.ts` | Environment, character rigs, weapon models, effects |
 | `src/ui.ts`, `src/style.css` | Lobby, HUD, settings, pause, results |
 | `src/config.ts`, `src/math.ts` | Balance values and pure gameplay helpers |
+| `src/movement.ts`, `src/animation.ts` | Jump rules and distance-driven two-bone leg animation |
 | `src/audio.ts` | Procedural positional audio |
 
 Unit tests cover movement, spread, damage, map connectivity, line-of-sight, and collision. Browser tests exercise actual mouse capture, movement, shooting, reloads, utility, bot firefights, round progression, and menus. They use full headless Chromium (`channel: 'chromium'`) because the separate headless-shell build does not support pointer lock on macOS. Development builds expose `window.__OPENCS__` for integration tests; production builds do not.

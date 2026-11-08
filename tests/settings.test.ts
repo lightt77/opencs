@@ -19,4 +19,9 @@ describe('saved settings', () => {
     stored({ movementSpeed: 1.5, jumpGravity: 14, doubleJump: true, map: 'longshot' });
     expect(loadSettings()).toMatchObject({ movementSpeed: 1.5, jumpGravity: 14, doubleJump: true, map: 'longshot' });
   });
+  it('restores known sound packs and safely rejects unknown pack IDs', () => {
+    stored({ soundPack: 'punchy' }); expect(loadSettings().soundPack).toBe('punchy');
+    stored({ soundPack: 'suppressed' }); expect(loadSettings().soundPack).toBe('suppressed');
+    stored({ soundPack: 'missing-pack' }); expect(loadSettings().soundPack).toBe('classic');
+  });
 });

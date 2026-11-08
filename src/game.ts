@@ -75,6 +75,7 @@ export class Game {
   preview(settings: Settings) {
     this.settings = { ...settings };
     this.sound.volume = settings.volume / 100;
+    this.sound.pack = settings.soundPack;
     this.view.renderer.shadowMap.enabled = settings.shadows;
     if (this.arena.id !== settings.map) {
       this.arena = MAPS[settings.map]; this.view.build(this.arena);
@@ -86,7 +87,7 @@ export class Game {
     this.arena = MAPS[settings.map]; this.nav = new Navigation(this.arena);
     this.physics = new Physics(this.arena); this.view.build(this.arena);
     this.view.renderer.shadowMap.enabled = settings.shadows;
-    this.sound.volume = settings.volume / 100; this.sound.unlock();
+    this.sound.volume = settings.volume / 100; this.sound.pack = settings.soundPack; void this.sound.unlock();
     const names = ['YOU', 'Kestrel', 'Moss', 'Rook', 'Echo', 'Viper', 'Ash', 'Ghost', 'Flint', 'Cinder'];
     this.actors = names.map((name, id) => {
       const team = id < 5 ? 'blue' : 'red';
@@ -127,7 +128,7 @@ export class Game {
 
   resume() {
     if (this.screen !== 'paused') return;
-    this.sound.unlock(); this.screen = 'playing'; this.clearInput(); this.onScreenChange?.(); this.capture();
+    void this.sound.unlock(); this.screen = 'playing'; this.clearInput(); this.onScreenChange?.(); this.capture();
   }
 
   private capture() {
