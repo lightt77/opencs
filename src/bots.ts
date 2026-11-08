@@ -8,6 +8,7 @@ interface Contact { point: Point; time: number }
 export interface BotContext {
   time: number; difficulty: Difficulty; actors: Actor[]; nav: Navigation;
   intel: Partial<Record<Team, Contact>>;
+  movementSpeed: number; jumpGravity: number;
   visible(a: Point, b: Point): boolean;
   shoot(actor: Actor, direction: THREE.Vector3): void;
   throwGrenade(actor: Actor, type: 'he' | 'flash' | 'smoke', target: Point): void;
@@ -135,10 +136,10 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
     if (d > .01 && d < 1.1) { moveX += (actor.position.x - ally.position.x) / d * (1.1 - d) * 1.5; moveZ += (actor.position.z - ally.position.z) / d * (1.1 - d) * 1.5; }
   }
   const length = Math.hypot(moveX, moveZ);
-  const speed = (targetVisible ? 2.1 : WEAPONS[actor.weapon].speed * .8) * (actor.flash > .3 ? .35 : 1);
+  const speed = (targetVisible ? 2.1 : WEAPONS[actor.weapon].speed * .8) * game.movementSpeed * (actor.flash > .3 ? .35 : 1);
   actor.velocity.x = length > 0 ? moveX / Math.max(1, length) * speed : 0;
   actor.velocity.z = length > 0 ? moveZ / Math.max(1, length) * speed : 0;
-  actor.velocity.y = actor.body.grounded ? -.5 : Math.max(-25, actor.velocity.y - 20 * dt);
+  actor.velocity.y = actor.body.grounded ? -.5 : Math.max(-35, actor.velocity.y - game.jumpGravity * dt);
   actor.body.move(actor.velocity.x * dt, actor.velocity.y * dt, actor.velocity.z * dt);
   if (actor.speed > 1) {
     actor.step += dt;

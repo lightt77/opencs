@@ -135,7 +135,7 @@ export class UI {
       <div class="damage-direction" id="damage-direction">⌃</div>
       <div class="death-card" id="death-card" hidden></div>
       <div class="bottom-hud"><div class="health-block"><span class="health-icon">+</span><div><strong id="health">100</strong><span>HEALTH</span></div><div class="health-bar"><i id="health-bar"></i></div></div>
-        <div class="quick-controls"><span><kbd>R</kbd> RELOAD</span><span><kbd>TAB</kbd> SCORE</span><span><kbd>ESC</kbd> PAUSE</span></div>
+        <div class="quick-controls"><span><kbd>Q</kbd> QUICK SWITCH</span><span><kbd>R</kbd> RELOAD</span><span><kbd>TAB</kbd> SCORE</span><span><kbd>ESC</kbd> PAUSE</span></div>
         <div class="ammo-block"><span id="weapon-name">AK-47</span><div><strong id="clip">30</strong><span>/ <b id="reserve">90</b></span></div><small id="weapon-status">7.62 × 39 MM</small></div>
       </div>
       <div class="weapon-slots" id="weapon-slots"></div>
@@ -177,25 +177,35 @@ export class UI {
     this.overlay.hidden = false;
     const s = this.settings;
     this.overlay.innerHTML = `<section class="dialog settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div class="dialog-title"><div><span class="eyebrow">MAKE IT YOURS</span><h2 id="settings-title">SETTINGS</h2></div><button class="close-button" aria-label="Close settings">×</button></div>
+      <div class="settings-grid"><section aria-labelledby="movement-title"><h3 id="movement-title">INPUT & MOVEMENT</h3>
       <label class="slider-label" for="sensitivity">MOUSE SENSITIVITY <output>${s.sensitivity.toFixed(2)}</output></label><input id="sensitivity" type="range" min="0.25" max="2.5" step="0.05" value="${s.sensitivity}" />
+      <label class="slider-label" for="movementSpeed">MOVEMENT SPEED <output>${s.movementSpeed.toFixed(1)}×</output></label><input id="movementSpeed" type="range" min="0.5" max="2" step="0.1" value="${s.movementSpeed}" />
+      <label class="slider-label" for="jumpGravity">JUMP GRAVITY <output>${s.jumpGravity} m/s²</output></label><input id="jumpGravity" type="range" min="10" max="35" step="1" value="${s.jumpGravity}" />
+      <label class="checkbox-label"><span>DOUBLE JUMP <small>Press Space again in the air for one extra jump.</small></span><input id="doubleJump" type="checkbox" ${s.doubleJump ? 'checked' : ''} /></label>
+      <p class="settings-hint">Speed applies to both teams. Lower gravity makes jumps higher and floatier. Grenade gravity is unchanged.</p>
+      </section><section aria-labelledby="audio-video-title"><h3 id="audio-video-title">AUDIO & VIDEO</h3>
       <label class="slider-label" for="volume">MASTER VOLUME <output>${s.volume}%</output></label><input id="volume" type="range" min="0" max="100" value="${s.volume}" />
       <label class="slider-label" for="fov">FIELD OF VIEW <output>${s.fov}°</output></label><input id="fov" type="range" min="70" max="105" value="${s.fov}" />
       <label class="checkbox-label"><span>SOFT SHADOWS <small>Turn off for a lighter GPU workload.</small></span><input id="shadows" type="checkbox" ${s.shadows ? 'checked' : ''} /></label>
+      </section></div>
       <button class="secondary-button" id="reset-settings">RESTORE DEFAULTS</button><p class="dialog-footnote">Saved on this device. Match options stay unchanged.</p>
     </section>`;
-    for (const key of ['sensitivity', 'volume', 'fov'] as const) {
+    for (const key of ['sensitivity', 'volume', 'fov', 'movementSpeed', 'jumpGravity'] as const) {
       const input = this.overlay.querySelector<HTMLInputElement>(`#${key}`)!;
       input.addEventListener('input', () => {
         this.settings[key] = Number(input.value);
-        input.previousElementSibling!.querySelector('output')!.textContent = key === 'sensitivity' ? this.settings[key].toFixed(2) : `${this.settings[key]}${key === 'fov' ? '°' : '%'}`;
+        const value = this.settings[key];
+        input.previousElementSibling!.querySelector('output')!.textContent = key === 'sensitivity' ? value.toFixed(2) : key === 'movementSpeed' ? `${value.toFixed(1)}×` : `${value}${key === 'fov' ? '°' : key === 'jumpGravity' ? ' m/s²' : '%'}`;
         this.applySettings();
       });
     }
-    this.overlay.querySelector('#shadows')!.addEventListener('change', event => {
-      this.settings.shadows = (event.target as HTMLInputElement).checked; this.applySettings();
-    });
+    for (const key of ['shadows', 'doubleJump'] as const) {
+      this.overlay.querySelector(`#${key}`)!.addEventListener('change', event => {
+        this.settings[key] = (event.target as HTMLInputElement).checked; this.applySettings();
+      });
+    }
     this.overlay.querySelector('#reset-settings')!.addEventListener('click', () => {
-      Object.assign(this.settings, { sensitivity: DEFAULTS.sensitivity, volume: DEFAULTS.volume, fov: DEFAULTS.fov, shadows: DEFAULTS.shadows });
+      Object.assign(this.settings, { sensitivity: DEFAULTS.sensitivity, volume: DEFAULTS.volume, fov: DEFAULTS.fov, shadows: DEFAULTS.shadows, movementSpeed: DEFAULTS.movementSpeed, doubleJump: DEFAULTS.doubleJump, jumpGravity: DEFAULTS.jumpGravity });
       this.applySettings(); this.openSettings();
     });
     this.overlay.querySelector('.close-button')!.addEventListener('click', () => this.closeDialog());
@@ -212,7 +222,7 @@ export class UI {
     this.overlay.hidden = false;
     this.overlay.innerHTML = `<section class="dialog manual-dialog" role="dialog" aria-modal="true" aria-labelledby="manual-title"><div class="dialog-title"><div><span class="eyebrow">READ THE ROOM. THEN CLEAR IT.</span><h2 id="manual-title">FIELD MANUAL</h2></div><button class="close-button" aria-label="Close manual">×</button></div>
       <div class="manual-grid">${[
-        ['W A S D', 'Move'], ['SPACE', 'Jump'], ['CTRL / C', 'Crouch'], ['LMB', 'Fire / throw'], ['RMB', 'AWP scope'], ['R', 'Reload'], ['1 / 2 / 3', 'Primary / pistol / knife'], ['4 / 5 / 6', 'HE / flash / smoke'], ['WHEEL', 'Cycle weapons'], ['TAB', 'Scoreboard'], ['ESC', 'Pause & release mouse'],
+        ['W A S D', 'Move'], ['SPACE', 'Jump / optional air jump'], ['CTRL / C', 'Crouch'], ['LMB', 'Fire / throw'], ['RMB', 'AWP scope'], ['R', 'Reload'], ['Q / Q Q', 'Last weapon / faster AWP cycle'], ['1 / 2 / 3', 'Primary / pistol / knife'], ['4 / 5 / 6', 'HE / flash / smoke'], ['WHEEL', 'Cycle weapons'], ['TAB', 'Scoreboard'], ['ESC', 'Pause & release mouse'],
       ].map(([key, label]) => `<div><span>${label}</span><kbd>${key}</kbd></div>`).join('')}</div>
       <div class="tips"><strong>STEADY FEET. STEADY AIM.</strong><p>Stop or counter-strafe before shooting. Fire short bursts at range. Footsteps and gunfire reveal your position to bots. Smoke blocks their sight; flashbangs disrupt their aim. Friendly fire is off, but your own HE can hurt you.</p></div>
       <p class="dialog-footnote">Elimination: first to ${ROUND_LIMIT} rounds. On timeout, surviving players then total health decide the round. A draw awards no point. Matches end after 15 rounds.</p>
@@ -264,7 +274,7 @@ export class UI {
     this.set('weapon-name', WEAPONS[p.weapon].name);
     this.set('clip', p.weapon === 'knife' ? '∞' : String(p.ammo[p.weapon].clip));
     this.set('reserve', String(p.ammo[p.weapon].reserve));
-    this.set('weapon-status', p.reload > 0 ? `RELOADING · ${p.reload.toFixed(1)}s` : p.immunity > 0 ? 'SPAWN PROTECTION' : p.weapon === 'awp' ? 'RMB TO SCOPE' : isGrenade(p.weapon) ? 'LMB TO THROW' : p.weapon === 'knife' ? 'CLOSE QUARTERS' : 'STOP TO SHOOT ACCURATELY');
+    this.set('weapon-status', p.reload > 0 ? `RELOADING · ${p.reload.toFixed(1)}s` : p.immunity > 0 ? 'SPAWN PROTECTION' : p.weapon === 'awp' ? 'RMB SCOPE · Q Q QUICK CYCLE' : isGrenade(p.weapon) ? 'LMB TO THROW' : p.weapon === 'knife' ? 'CLOSE QUARTERS' : 'STOP TO SHOOT ACCURATELY');
     this.set('announcement', g.phase === 'warmup' ? `GET READY · ${Math.ceil(g.phaseTime)}` : g.announcementTime > 0 ? g.announcement : '');
     e['announcement'].classList.toggle('visible', !!e['announcement'].textContent);
     const feed = g.kills.filter(k => g.time - k.time < 7).map(k => `<div><b class="${k.team}-text">${k.killer}</b><span>${WEAPONS[k.weapon].short}${k.head ? ' ⊕' : ''}</span><b class="${k.team === 'blue' ? 'red' : 'blue'}-text">${k.victim}</b></div>`).join('');

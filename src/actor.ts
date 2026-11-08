@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { inventory, WEAPONS, type Primary, type Team, type WeaponId } from './config';
+import { AWP_QUICK_INTERVAL, inventory, WEAPONS, type Primary, type Team, type WeaponId } from './config';
 import type { CharacterBody } from './physics';
 import type { Point } from './math';
 import { Soldier } from './models';
@@ -27,7 +27,13 @@ export class Actor {
   weapon: WeaponId;
   primary: Primary;
   ammo = {} as Record<WeaponId, Ammo>;
-  cooldown = 0;
+  previousWeapon: WeaponId = 'pistol';
+  private cooldowns: Partial<Record<WeaponId, number>> = {};
+  private quickAwpCycle = false;
+  awpShotAge = Infinity;
+  jumpsUsed = 0;
+  get cooldown() { return this.cooldowns[this.weapon] ?? 0; }
+  set cooldown(value: number) { this.cooldowns[this.weapon] = value; }
   reload = 0;
   switching = 0;
   shots = 0;
@@ -61,7 +67,8 @@ export class Actor {
 
   reset(point: Point, immunity: number) {
     this.alive = true; this.health = 100; this.velocity.set(0, 0, 0);
-    this.flash = 0; this.cooldown = 0; this.reload = 0; this.switching = .25;
+    this.flash = 0; this.cooldowns = {}; this.reload = 0; this.switching = .25;
+    this.previousWeapon = 'pistol'; this.quickAwpCycle = false; this.awpShotAge = Infinity; this.jumpsUsed = 0;
     this.shots = 0; this.shotAge = 0; this.immunity = immunity;
     this.weapon = this.primary; this.refill();
     this.body.enabled(true); this.body.crouch(false); this.body.teleport(point);
@@ -78,7 +85,8 @@ export class Actor {
   }
 
   tick(dt: number) {
-    this.cooldown = Math.max(0, this.cooldown - dt);
+    for (const id of Object.keys(this.cooldowns) as WeaponId[]) this.cooldowns[id] = Math.max(0, this.cooldowns[id]! - dt);
+    this.awpShotAge += dt;
     this.switching = Math.max(0, this.switching - dt);
     this.immunity = Math.max(0, this.immunity - dt);
     this.flash = Math.max(0, this.flash - dt);
@@ -99,8 +107,18 @@ export class Actor {
     this.reload = spec.reload; return true;
   }
 
-  equip(id: WeaponId) {
+  quickSwitch() { return this.equip(this.previousWeapon, true); }
+
+  equip(id: WeaponId, quick = false) {
     if (!this.alive || !this.weapons.includes(id) || this.weapon === id) return false;
-    this.weapon = id; this.reload = 0; this.switching = .25; this.shots = 0; return true;
+    const outgoing = this.weapon;
+    this.previousWeapon = outgoing; this.weapon = id;
+    if (quick && outgoing === 'awp' && this.awpShotAge < WEAPONS.awp.interval) this.quickAwpCycle = true;
+    if (quick && id === 'awp' && this.quickAwpCycle) {
+      // Double-Q skips the long bolt recovery, but never allows instant sniper spam.
+      this.cooldown = Math.min(this.cooldown, Math.max(0, AWP_QUICK_INTERVAL - this.awpShotAge));
+      this.quickAwpCycle = false;
+    } else if (!quick) this.quickAwpCycle = false;
+    this.reload = 0; this.switching = quick ? .12 : .25; this.shots = 0; return true;
   }
 }

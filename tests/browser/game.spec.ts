@@ -34,12 +34,18 @@ test('lobby, local settings, map previews and field manual', async ({ page }) =>
   await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
   await page.locator('#volume').fill('20');
   await page.locator('#sensitivity').fill('1.5');
+  await page.locator('#movementSpeed').fill('1.5');
+  await page.locator('#jumpGravity').fill('14');
+  await page.locator('#doubleJump').check();
   await page.getByRole('button', { name: 'Close settings' }).click();
   await page.reload();
   await expect(page.locator('[data-map="snow"]')).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
   await expect(page.locator('#volume')).toHaveValue('20');
   await expect(page.locator('#sensitivity')).toHaveValue('1.5');
+  await expect(page.locator('#movementSpeed')).toHaveValue('1.5');
+  await expect(page.locator('#jumpGravity')).toHaveValue('14');
+  await expect(page.locator('#doubleJump')).toBeChecked();
   await page.getByRole('button', { name: 'Close settings' }).click();
   await page.getByRole('button', { name: /FIELD MANUAL/ }).click();
   await expect(page.getByRole('heading', { name: 'FIELD MANUAL' })).toBeVisible();
@@ -205,4 +211,42 @@ test('flash affects both teams, smoke blocks bot vision, and HE respects cover',
     return { beforeSmoke, flashParity, smokeBlocks, heCover, noFriendlyHE, selfDamage };
   });
   expect(result).toEqual({ beforeSmoke: true, flashParity: true, smokeBlocks: true, heCover: true, noFriendlyHE: true, selfDamage: true });
+});
+
+test('double-Q shortens AWP recovery without resetting ammunition or allowing instant shots', async ({ page }) => {
+  await open(page); await page.locator('[data-primary="awp"]').click(); await deploy(page, true);
+  await page.evaluate(() => { for (let i = 0; i < 190; i++) window.__OPENCS__.update(1 / 60); });
+  await page.mouse.click(720, 450);
+  await expect(page.locator('#clip')).toHaveText('4');
+  await page.keyboard.press('KeyQ'); await expect(page.locator('#weapon-name')).toHaveText('USP');
+  await page.keyboard.press('KeyQ'); await expect(page.locator('#weapon-name')).toHaveText('AWP');
+  const cycle = await page.evaluate(() => {
+    const g = window.__OPENCS__, p = g.player;
+    const recovery = p.cooldown + p.awpShotAge;
+    const before = p.ammo.awp.clip;
+    g.shoot(p, p.eye().normalize());
+    return { recovery, before, after: p.ammo.awp.clip, previous: p.previousWeapon };
+  });
+  expect(cycle.recovery).toBeCloseTo(.7, 1);
+  expect(cycle.before).toBe(4); expect(cycle.after).toBe(4); expect(cycle.previous).toBe('pistol');
+  await page.evaluate(() => { for (let i = 0; i < 45; i++) window.__OPENCS__.update(1 / 60); });
+  await page.mouse.click(720, 450); await expect(page.locator('#clip')).toHaveText('3');
+});
+
+test('custom movement speed and double jump apply to live physics', async ({ page }) => {
+  await open(page);
+  await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+  await page.locator('#movementSpeed').fill('1.5'); await page.locator('#jumpGravity').fill('12'); await page.locator('#doubleJump').check();
+  await page.getByRole('button', { name: 'Close settings' }).click(); await deploy(page, true);
+  await page.evaluate(() => { for (let i = 0; i < 190; i++) window.__OPENCS__.update(1 / 60); });
+  await page.keyboard.down('KeyW');
+  await expect.poll(() => page.evaluate(() => window.__OPENCS__.player.speed)).toBeGreaterThan(8);
+  await page.keyboard.up('KeyW');
+  await page.keyboard.press('Space');
+  await expect.poll(() => page.evaluate(() => window.__OPENCS__.player.jumpsUsed)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.__OPENCS__.player.position.y)).toBeGreaterThan(.4);
+  await page.keyboard.press('Space');
+  await expect.poll(() => page.evaluate(() => window.__OPENCS__.player.jumpsUsed)).toBe(2);
+  await page.keyboard.press('Space');
+  expect(await page.evaluate(() => window.__OPENCS__.player.jumpsUsed)).toBe(2);
 });

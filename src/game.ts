@@ -10,6 +10,7 @@ import { block, disposeTree } from './models';
 import { Navigation } from './navigation';
 import { Physics } from './physics';
 import { View } from './view';
+import { verticalMotion } from './movement';
 
 export interface Kill { killer: string; victim: string; team: Team; weapon: WeaponId; head: boolean; time: number }
 interface Grenade { body: RAPIER.RigidBody; mesh: THREE.Object3D; owner: Actor; type: 'he' | 'flash' | 'smoke'; fuse: number }
@@ -148,6 +149,7 @@ export class Game {
       if (event.repeat || !this.player?.alive) return;
       if (event.code === 'Space') this.jumpQueued = true;
       if (event.code === 'KeyR' && this.player.startReload()) { this.scoped = false; this.sound.reload(); }
+      if (event.code === 'KeyQ' && this.player.quickSwitch()) { this.scoped = false; this.sound.click(); }
       if (event.code.startsWith('Digit')) {
         const id = this.player.weapons[Number(event.code.slice(5)) - 1];
         if (id && this.player.equip(id)) { this.scoped = false; this.sound.click(); }
@@ -216,6 +218,7 @@ export class Game {
       this.remaining = Math.max(0, this.remaining - dt);
       const context: BotContext = {
         time: this.time, difficulty: this.settings.difficulty, actors: this.actors, nav: this.nav, intel: this.intel,
+        movementSpeed: this.settings.movementSpeed, jumpGravity: this.settings.jumpGravity,
         visible: (a, b) => this.visible(a, b), shoot: (actor, direction) => this.shoot(actor, direction),
         throwGrenade: (actor, type, target) => this.botGrenade(actor, type, target), footstep: a => this.footstep(a),
       };
@@ -247,20 +250,19 @@ export class Game {
     const right = Number(this.keys.has('KeyD')) - Number(this.keys.has('KeyA'));
     const dx = right * Math.cos(p.yaw) - forward * Math.sin(p.yaw);
     const dz = -right * Math.sin(p.yaw) - forward * Math.cos(p.yaw);
-    const maxSpeed = WEAPONS[p.weapon].speed * (p.body.crouched ? .48 : this.scoped ? .55 : 1);
+    const maxSpeed = WEAPONS[p.weapon].speed * this.settings.movementSpeed * (p.body.crouched ? .48 : this.scoped ? .55 : 1);
+    const vertical = verticalMotion(p.velocity.y, p.body.grounded, this.jumpQueued, p.jumpsUsed, this.settings.doubleJump, this.settings.jumpGravity, dt);
+    p.velocity.y = vertical.velocity; p.jumpsUsed = vertical.jumpsUsed; this.jumpQueued = false;
     if (p.body.grounded) {
       const v = groundVelocity(p.velocity.x, p.velocity.z, dx, dz, maxSpeed, dt);
-      p.velocity.x = v.x; p.velocity.z = v.z; p.velocity.y = -.5;
-      if (this.jumpQueued) { p.velocity.y = 7.2; this.jumpQueued = false; }
+      p.velocity.x = v.x; p.velocity.z = v.z;
     } else {
-      p.velocity.y = Math.max(-28, p.velocity.y - 20 * dt);
       const length = Math.hypot(dx, dz);
       if (length) {
         p.velocity.x += dx / length * dt * 3; p.velocity.z += dz / length * dt * 3;
         const speed = p.speed;
         if (speed > maxSpeed) { p.velocity.x *= maxSpeed / speed; p.velocity.z *= maxSpeed / speed; }
       }
-      this.jumpQueued = false;
     }
     p.body.move(p.velocity.x * dt, p.velocity.y * dt, p.velocity.z * dt);
     if (p.body.grounded && p.speed > 2 && !p.body.crouched) {
@@ -290,6 +292,7 @@ export class Game {
     actor.immunity = 0;
     if (id !== 'knife') ammo.clip--;
     actor.cooldown = spec.interval; actor.shots++; actor.shotAge = 0; actor.model.flash = .06;
+    if (id === 'awp') actor.awpShotAge = 0;
     if (actor.human) {
       this.kick = 1; this.shotFlash = id === 'knife' ? 0 : .05;
       this.recoilPitch = Math.min(.18, this.recoilPitch + spec.recoil * (1 + actor.shots * .06));

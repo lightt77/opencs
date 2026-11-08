@@ -8,11 +8,13 @@ export type Primary = 'ak' | 'm4' | 'awp';
 export interface Settings {
   map: MapId; mode: Mode; difficulty: Difficulty; primary: Primary;
   sensitivity: number; volume: number; fov: number; shadows: boolean;
+  movementSpeed: number; doubleJump: boolean; jumpGravity: number;
 }
 
 export const DEFAULTS: Settings = {
   map: 'dust', mode: 'tdm', difficulty: 'medium', primary: 'ak',
   sensitivity: 1, volume: 65, fov: 85, shadows: true,
+  movementSpeed: 1, doubleJump: false, jumpGravity: 20,
 };
 
 export function loadSettings(): Settings {
@@ -27,6 +29,9 @@ export function loadSettings(): Settings {
       volume: finiteRange(raw.volume, 0, 100, 65),
       fov: finiteRange(raw.fov, 70, 105, 85),
       shadows: typeof raw.shadows === 'boolean' ? raw.shadows : true,
+      movementSpeed: finiteRange(raw.movementSpeed, .5, 2, DEFAULTS.movementSpeed),
+      doubleJump: typeof raw.doubleJump === 'boolean' ? raw.doubleJump : DEFAULTS.doubleJump,
+      jumpGravity: finiteRange(raw.jumpGravity, 10, 35, DEFAULTS.jumpGravity),
     };
   } catch { return { ...DEFAULTS }; }
 }
@@ -64,6 +69,7 @@ export const TDM_LIMIT = 40;
 export const MATCH_SECONDS = 360;
 export const ROUND_SECONDS = 100;
 export const ROUND_LIMIT = 5;
+export const AWP_QUICK_INTERVAL = .7;
 
 export function isGrenade(id: WeaponId): id is 'he' | 'flash' | 'smoke' {
   return id === 'he' || id === 'flash' || id === 'smoke';
