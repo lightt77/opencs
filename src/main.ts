@@ -10,7 +10,7 @@ async function main() {
     await initPhysics();
     const game = new Game(document.querySelector<HTMLCanvasElement>('#game')!);
     new UI(game);
-    // Read-only diagnostics for local development and automated smoke tests.
+    // Development-only diagnostics for automated browser integration tests.
     if (import.meta.env.DEV) Object.defineProperty(window, '__OPENCS__', { value: game, configurable: true });
   } catch (error) {
     console.error(error);

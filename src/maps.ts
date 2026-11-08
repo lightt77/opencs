@@ -10,7 +10,7 @@ export interface Arena {
 const box = (x: number, z: number, w: number, d: number, h = 4.8, kind: Box['kind'] = 'building', color?: number): Box => ({ x, y: h / 2, z, w, d, h, kind, color });
 const crate = (x: number, z: number, w = 2, d = 2, h = 1.6) => box(x, z, w, d, h, 'crate');
 const bounds = (w: number, d: number): Box[] => [box(-w / 2, 0, 1, d + 1, 6, 'wall'), box(w / 2, 0, 1, d + 1, 6, 'wall'), box(0, -d / 2, w, 1, 6, 'wall'), box(0, d / 2, w, 1, 6, 'wall')];
-const spawns = (z: number): Point[] => [-8, -4, 0, 4, 8].map(x => ({ x, z }));
+const spawns = (z: number): Point[] => [0, -8, 8, -4, 4].map(x => ({ x, z }));
 
 export const MAPS: Record<MapId, Arena> = {
   dust: {

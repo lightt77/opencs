@@ -67,7 +67,7 @@ export class Actor {
     this.body.enabled(true); this.body.crouch(false); this.body.teleport(point);
     this.yaw = this.team === 'blue' ? 0 : Math.PI; this.pitch = 0;
     this.brain.path = []; this.brain.target = -1; this.brain.memory = undefined;
-    this.brain.goal = undefined; this.brain.repath = 0; this.brain.stuck = 0; this.brain.burst = 0; this.brain.pause = 0;
+    this.brain.goal = undefined; this.brain.repath = 0; this.brain.stuck = 0; this.brain.burst = 0; this.brain.pause = 0; this.brain.hold = 0;
     this.sync(); this.previousPosition.copy(this.position);
     this.model.root.visible = !this.human;
   }

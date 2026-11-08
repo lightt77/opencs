@@ -91,7 +91,13 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
     if (actor.health < 30 && actor.ammo.smoke.clip && Math.random() < dt * .2) game.throwGrenade(actor, 'smoke', actor.position);
   }
 
-  if (!targetVisible || actor.reload > 0 || (actor.health < 35 && brain.path.length)) {
+  const holdingAngle = !targetVisible && actor.reload <= 0 && brain.hold > game.time;
+  if (holdingAngle) {
+    const point = brain.memory?.point ?? { x: 0, z: actor.team === 'blue' ? -28 : 28 };
+    const yaw = Math.atan2(actor.position.x - point.x, actor.position.z - point.z) + Math.sin(game.time * 1.4) * .3;
+    actor.yaw += angleDelta(actor.yaw, yaw) * Math.min(1, dt * 5);
+  }
+  if ((!targetVisible || actor.reload > 0 || (actor.health < 35 && brain.path.length)) && !holdingAngle) {
     if (brain.repath <= 0 || (!brain.path.length && !targetVisible)) {
       const memory = brain.memory && game.time - brain.memory.time < 7 ? brain.memory.point : undefined;
       const routes = game.nav.arena.routes;
@@ -101,13 +107,15 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
         if (brain.role === 'flank' && distance(actor.position, memory) > 12) goal.x = clamp(goal.x + (actor.id % 2 ? 8 : -8), -25, 25);
       } else {
         // Routes and enemy spawn are map knowledge, not knowledge of unseen enemies.
-        const options = [...routes, ...game.nav.arena[actor.team === 'blue' ? 'red' : 'blue']];
+        const options = [...routes, ...game.nav.arena[actor.team === 'blue' ? 'red' : 'blue']].filter(p => distance(actor.position, p) > 3);
         goal = options[(actor.id * 3 + Math.floor(game.time / 8) + Math.floor(Math.random() * 3)) % options.length];
       }
       if (actor.reload > 0 && brain.memory) goal = findCover(actor.position, brain.memory.point, game.nav) ?? goal;
       brain.goal = goal; brain.path = game.nav.path(actor.position, goal); brain.repath = 1.5 + Math.random();
     }
+    const followingPath = brain.path.length > 0;
     while (brain.path.length && distance(actor.position, brain.path[0]) < .65) brain.path.shift();
+    if (followingPath && !brain.path.length && brain.role === 'hold') brain.hold = game.time + 2.5;
     const waypoint = brain.path[0];
     if (waypoint) {
       const dx = waypoint.x - actor.position.x, dz = waypoint.z - actor.position.z;

@@ -56,7 +56,7 @@ export class CharacterBody {
 
   crouch(enabled: boolean) {
     if (enabled === this.crouched) return;
-    // Prevent standing through a low ceiling (all launch maps have ample headroom).
+    // Launch maps have ample headroom; crouching keeps the same foot position.
     const feet = this.position();
     this.crouched = enabled; this.height = enabled ? .59 : .86;
     this.collider.setShape(new RAPIER.Capsule(enabled ? .27 : .54, .32));

@@ -114,11 +114,13 @@ export class Soldier {
       arm.rotation.x = -.35; this.body.add(arm);
     }
     this.gun = weaponModel(weapon); this.gun.position.set(.17, 1.03, -.35); this.body.add(this.gun);
+    // Held equipment is not a damage hitbox (including the invisible muzzle flash).
+    this.gun.traverse(o => { if (o instanceof THREE.Mesh) o.raycast = () => {}; });
     const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 48;
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = '#a9def0'; ctx.font = 'bold 24px monospace'; ctx.textAlign = 'center'; ctx.fillText(name.toUpperCase(), 128, 32);
     this.label = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthTest: true }));
-    this.label.position.y = 2.05; this.label.scale.set(1.5, .28, 1); this.label.visible = team === 'blue'; this.root.add(this.label);
+    this.label.position.y = 2.05; this.label.scale.set(1.2, .23, 1); this.label.visible = team === 'blue'; this.root.add(this.label);
     this.root.traverse(o => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
   }
 
@@ -128,7 +130,7 @@ export class Soldier {
     this.death += ((alive ? 0 : 1) - this.death) * Math.min(1, dt * 9);
     this.body.rotation.z = -this.death * 1.45;
     this.body.position.y = -this.death * .35;
-    this.label.visible = this.label.material.color.getHex() !== 0 && alive && this.label.userData.enabled !== false;
+    this.label.visible = alive && this.label.userData.enabled !== false;
     const stride = Math.sin(time * 11) * Math.min(speed / 6, 1) * .65;
     this.leftLeg.rotation.x = stride; this.rightLeg.rotation.x = -stride;
     this.gun.rotation.x = reloading ? -.55 : -this.flash * 2;
@@ -140,8 +142,8 @@ export function disposeTree(root: THREE.Object3D) {
   const geometries = new Set<THREE.BufferGeometry>();
   const materials = new Set<THREE.Material>();
   root.traverse(object => {
-    if (object instanceof THREE.Mesh) geometries.add(object.geometry);
-    if (object instanceof THREE.Mesh || object instanceof THREE.Sprite) {
+    if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points) geometries.add(object.geometry);
+    if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points || object instanceof THREE.Sprite) {
       for (const mat of Array.isArray(object.material) ? object.material : [object.material]) materials.add(mat);
     }
   });

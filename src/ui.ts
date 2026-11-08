@@ -1,5 +1,5 @@
 import type { Game } from './game';
-import { DEFAULTS, MATCH_SECONDS, ROUND_LIMIT, TDM_LIMIT, WEAPONS, isGrenade, loadSettings, type Settings } from './config';
+import { DEFAULTS, ROUND_LIMIT, TDM_LIMIT, WEAPONS, isGrenade, loadSettings, type Settings } from './config';
 import { MAPS, type Arena } from './maps';
 import { clamp } from './math';
 
