@@ -10,6 +10,16 @@ type DiagnosticGame = Omit<Game, never> & {
 };
 declare global { interface Window { __OPENCS__: DiagnosticGame } }
 
+function sampleWav() {
+  const samples = 4410, bytes = Buffer.alloc(44 + samples * 2);
+  bytes.write('RIFF', 0); bytes.writeUInt32LE(bytes.length - 8, 4); bytes.write('WAVEfmt ', 8);
+  bytes.writeUInt32LE(16, 16); bytes.writeUInt16LE(1, 20); bytes.writeUInt16LE(1, 22);
+  bytes.writeUInt32LE(44100, 24); bytes.writeUInt32LE(88200, 28); bytes.writeUInt16LE(2, 32); bytes.writeUInt16LE(16, 34);
+  bytes.write('data', 36); bytes.writeUInt32LE(samples * 2, 40);
+  for (let i = 0; i < samples; i++) bytes.writeInt16LE(Math.round(Math.sin(i * .1) * 8000 * (1 - i / samples)), 44 + i * 2);
+  return bytes;
+}
+
 async function open(page: Page) {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'SMALL MAPS. BIG STAKES.' })).toBeVisible();
@@ -360,4 +370,43 @@ test('Dust II displays its route callouts, mid doors, and A/B site landmarks', a
   await expect(page.locator('#location-name')).toHaveText('MID DOORS');
   await page.screenshot({ path: 'test-results/dust-ii.png' });
   expect(errors).toEqual([]);
+});
+
+test('custom gunshot files import locally, survive reload, reject corrupt replacements and can be removed', async ({ page }) => {
+  const errors: string[] = [], uploads: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('request', request => { if (request.method() === 'POST' || request.method() === 'PUT') uploads.push(request.url()); });
+  await open(page); await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+  await page.locator('#manage-sounds').click();
+  await page.locator('#custom-ak').setInputFiles({ name: 'my-<b>ak.wav', mimeType: 'audio/wav', buffer: sampleWav() });
+  await expect(page.locator('#custom-audio-status')).toContainText('loaded and saved locally');
+  await expect(page.locator('[data-sample-name="ak"]')).toHaveText('my-<b>ak.wav');
+  await expect(page.locator('[data-sample-name="ak"] b')).toHaveCount(0);
+  expect(await page.evaluate(() => ({ pack: window.__OPENCS__.sound.pack, ready: window.__OPENCS__.sound.hasCustomShot('ak'), missing: window.__OPENCS__.sound.hasCustomShot('awp') }))).toEqual({ pack: 'custom', ready: true, missing: false });
+  await page.evaluate(() => { window.__OPENCS__.sound.pack = 'classic'; });
+  await page.getByRole('button', { name: 'Preview AK-47 custom gunshot', exact: true }).click();
+  expect(await page.evaluate(() => window.__OPENCS__.sound.pack)).toBe('classic');
+  await page.reload(); await page.getByRole('button', { name: 'SETTINGS', exact: true }).click();
+  await expect(page.locator('#soundPack')).toHaveValue('custom'); await page.locator('#manage-sounds').click();
+  await expect(page.locator('[data-sample-name="ak"]')).toHaveText('my-<b>ak.wav');
+  await page.getByRole('button', { name: 'Preview AK-47 custom gunshot', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__OPENCS__.sound.hasCustomShot('ak'))).toBe(true);
+  await page.locator('#custom-ak').setInputFiles({ name: 'broken.wav', mimeType: 'audio/wav', buffer: Buffer.from('not audio') });
+  await expect(page.locator('#custom-audio-status')).toContainText('could not be decoded');
+  await expect(page.locator('[data-sample-name="ak"]')).toHaveText('my-<b>ak.wav');
+  await page.screenshot({ path: 'test-results/custom-audio.png' });
+  await page.getByRole('button', { name: 'Remove AK-47 custom gunshot', exact: true }).click();
+  await expect(page.locator('[data-sample-name="ak"]')).toHaveText('Classic fallback');
+  await page.reload(); await page.getByRole('button', { name: 'SETTINGS', exact: true }).click(); await page.locator('#manage-sounds').click();
+  await expect(page.locator('[data-sample-name="ak"]')).toHaveText('Classic fallback');
+  await expect(page.getByRole('button', { name: 'Preview AK-47 custom gunshot', exact: true })).toBeDisabled();
+  expect(errors).toEqual([]); expect(uploads).toEqual([]);
+});
+
+test('custom audio remains usable for the session when browser storage is unavailable', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(window, 'indexedDB', { get() { throw new Error('Storage blocked for test'); } }));
+  await open(page); await page.getByRole('button', { name: 'SETTINGS', exact: true }).click(); await page.locator('#manage-sounds').click();
+  await page.locator('#custom-awp').setInputFiles({ name: 'awp.wav', mimeType: 'audio/wav', buffer: sampleWav() });
+  await expect(page.locator('#custom-audio-status')).toContainText('this session only');
+  expect(await page.evaluate(() => window.__OPENCS__.sound.hasCustomShot('awp'))).toBe(true);
 });

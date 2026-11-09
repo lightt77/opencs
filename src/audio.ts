@@ -1,11 +1,16 @@
-import type { SoundPack, WeaponId } from './config';
+import type { BuiltinSoundPack, FirearmId, SoundPack, WeaponId } from './config';
 import type { Point } from './math';
+import { deleteStoredShot, loadStoredShots, saveStoredShot, validateAudioFile, validateDecodedShot, type StoredShot } from './custom-audio';
 
 export const SOUND_PACKS = {
   classic: { name: 'CLASSIC', description: 'Dry reports, a metallic edge, and an old-school low-end thump.', duration: 1, cutoff: 1, gain: 1, pitch: 1, waveform: 'triangle', tail: false, toneLevel: .65 },
   punchy: { name: 'PUNCHY', description: 'A sharp crack, heavier bass, and a short outdoor tail.', duration: .85, cutoff: 1.8, gain: .95, pitch: .7, waveform: 'sawtooth', tail: true, toneLevel: .32 },
   suppressed: { name: 'SUPPRESSED', description: 'Short, rounded shots with a soft mechanical pop.', duration: .5, cutoff: .28, gain: .6, pitch: 1.6, waveform: 'sine', tail: false, toneLevel: .3 },
-} satisfies Record<SoundPack, { name: string; description: string; duration: number; cutoff: number; gain: number; pitch: number; waveform: OscillatorType; tail: boolean; toneLevel: number }>;
+} satisfies Record<BuiltinSoundPack, { name: string; description: string; duration: number; cutoff: number; gain: number; pitch: number; waveform: OscillatorType; tail: boolean; toneLevel: number }>;
+
+export function soundPackDescription(pack: SoundPack) {
+  return pack === 'custom' ? 'Your own local audio. Weapons without a sample fall back to Classic.' : SOUND_PACKS[pack].description;
+}
 
 export class Sound {
   private context?: AudioContext;
@@ -14,6 +19,12 @@ export class Sound {
   private listener = { x: 0, z: 0, yaw: 0 };
   volume = .65;
   pack: SoundPack = 'classic';
+  private custom = new Map<FirearmId, StoredShot & { buffer?: AudioBuffer }>();
+  private decoding?: Promise<void>;
+  readonly ready = loadStoredShots().then(records => { for (const record of records) this.custom.set(record.id, record); }).catch(() => {});
+
+  customName(id: FirearmId) { return this.custom.get(id)?.name; }
+  hasCustomShot(id: FirearmId) { return !!this.custom.get(id)?.buffer; }
 
   async unlock() {
     try {
@@ -28,7 +39,45 @@ export class Sound {
         for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
       }
       await this.context.resume();
+      await this.ready;
+      await this.decodeCustom();
     } catch { /* The game remains playable without an audio device. */ }
+  }
+
+  private async decodeCustom() {
+    if (!this.context) return;
+    if (this.decoding) return this.decoding;
+    const ctx = this.context;
+    this.decoding = (async () => {
+      for (const record of this.custom.values()) {
+        if (record.buffer) continue;
+        try {
+          const buffer = await ctx.decodeAudioData(record.bytes.slice(0));
+          validateDecodedShot(buffer.duration, buffer.numberOfChannels); record.buffer = buffer;
+        } catch { /* Unsupported/corrupt stored audio falls back to Classic, never silence. */ }
+      }
+    })();
+    try { await this.decoding; } finally { this.decoding = undefined; }
+  }
+
+  async importShot(id: FirearmId, file: File): Promise<{ persisted: boolean }> {
+    validateAudioFile(file); await this.unlock();
+    if (!this.context) throw new Error('Audio is unavailable in this browser.');
+    const bytes = await file.arrayBuffer();
+    let buffer: AudioBuffer;
+    try { buffer = await this.context.decodeAudioData(bytes.slice(0)); }
+    catch { throw new Error('This audio could not be decoded. Try exporting it as a standard PCM WAV.'); }
+    validateDecodedShot(buffer.duration, buffer.numberOfChannels);
+    const record = { id, name: file.name.slice(0, 200), bytes };
+    this.custom.set(id, { ...record, buffer });
+    try { await saveStoredShot(record); return { persisted: true }; }
+    catch { return { persisted: false }; }
+  }
+
+  async removeCustomShot(id: FirearmId): Promise<{ persisted: boolean }> {
+    await this.ready; this.custom.delete(id);
+    try { await deleteStoredShot(id); return { persisted: true }; }
+    catch { return { persisted: false }; }
   }
 
   listen(x: number, z: number, yaw: number) { this.listener = { x, z, yaw }; }
@@ -73,10 +122,25 @@ export class Sound {
   shot(id: WeaponId, position?: Point) {
     if (id === 'knife') return this.burst(.12, 900, .28, position, 250);
     const sniper = id === 'awp';
-    const profile = SOUND_PACKS[this.pack];
+    const sample = this.pack === 'custom' ? this.custom.get(id as FirearmId)?.buffer : undefined;
+    if (sample) {
+      this.playSample(sample, id, position); return;
+    }
+    const profile = SOUND_PACKS[this.pack === 'custom' ? 'classic' : this.pack];
     const frequency = (id === 'pistol' ? 3200 : id === 'ak' ? 2800 : id === 'm4' ? 2200 : 1900) * profile.cutoff;
     this.burst((sniper ? .55 : id === 'pistol' ? .13 : .19) * profile.duration, frequency, (sniper ? 1 : .7) * profile.gain, position, (sniper ? 95 : 160) * profile.pitch, { waveform: profile.waveform, filterEnd: frequency * .28, toneLevel: profile.toneLevel });
     if (profile.tail) this.burst(sniper ? .7 : .3, 550, sniper ? .2 : .09, position, 60, { waveform: 'sine', toneLevel: .25 });
+  }
+  private playSample(sample: AudioBuffer, id: WeaponId, position?: Point) {
+    const out = this.channel(position, id === 'awp' ? 1 : .8);
+    if (!out) return;
+    const source = out.ctx.createBufferSource(); source.buffer = sample; source.connect(out.gain); source.start();
+    source.onended = () => { source.disconnect(); out.dispose(); };
+  }
+  async previewCustom(id: FirearmId) {
+    await this.unlock();
+    const sample = this.custom.get(id)?.buffer;
+    if (sample) this.playSample(sample, id);
   }
   async preview(id: WeaponId) { await this.unlock(); this.shot(id); }
   step(position?: Point, snow = false) { this.burst(.065, snow ? 1400 : 700, .13, position, 70); }

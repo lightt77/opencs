@@ -2,7 +2,8 @@ import type { Game } from './game';
 import { DEFAULTS, ROUND_LIMIT, TDM_LIMIT, WEAPONS, isGrenade, loadSettings, type Settings } from './config';
 import { MAPS, type Arena } from './maps';
 import { clamp } from './math';
-import { SOUND_PACKS } from './audio';
+import { SOUND_PACKS, soundPackDescription } from './audio';
+import { CUSTOM_WEAPONS } from './custom-audio';
 import { Vector3 } from 'three';
 
 const cross = '<svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M16 2v8m0 12v8M2 16h8m12 0h8" stroke="currentColor" stroke-width="3"/><circle cx="16" cy="16" r="3" fill="currentColor"/></svg>';
@@ -201,6 +202,7 @@ export class UI {
   }
 
   private closeDialog() {
+    if (this.overlay.querySelector('.custom-audio-dialog')) { this.openSettings(); return; }
     if (this.game.screen === 'paused') this.pauseHTML();
     else { this.overlay.hidden = true; this.overlay.innerHTML = ''; }
   }
@@ -218,9 +220,10 @@ export class UI {
       </section><section aria-labelledby="audio-video-title"><h3 id="audio-video-title">AUDIO & VIDEO</h3>
       <label class="slider-label" for="volume">MASTER VOLUME <output>${s.volume}%</output></label><input id="volume" type="range" min="0" max="100" value="${s.volume}" />
       <label class="slider-label" for="soundPack">GUNSHOT SOUND PACK</label>
-      <select id="soundPack" class="pack-select">${Object.entries(SOUND_PACKS).map(([id, pack]) => `<option value="${id}" ${s.soundPack === id ? 'selected' : ''}>${pack.name}</option>`).join('')}</select>
-      <p class="pack-description" id="pack-description">${SOUND_PACKS[s.soundPack].description}</p>
+      <select id="soundPack" class="pack-select">${Object.entries(SOUND_PACKS).map(([id, pack]) => `<option value="${id}" ${s.soundPack === id ? 'selected' : ''}>${pack.name}</option>`).join('')}<option value="custom" ${s.soundPack === 'custom' ? 'selected' : ''}>CUSTOM / YOUR FILES</option></select>
+      <p class="pack-description" id="pack-description">${soundPackDescription(s.soundPack)}</p>
       <button class="secondary-button preview-sound" id="preview-sound">▶ PREVIEW ${WEAPONS[s.primary].name} GUNSHOT</button>
+      <button class="secondary-button manage-sounds" id="manage-sounds">IMPORT / MANAGE CUSTOM SOUNDS</button>
       <label class="slider-label" for="fov">FIELD OF VIEW <output>${s.fov}°</output></label><input id="fov" type="range" min="70" max="105" value="${s.fov}" />
       <label class="checkbox-label"><span>SOFT SHADOWS <small>Turn off for a lighter GPU workload.</small></span><input id="shadows" type="checkbox" ${s.shadows ? 'checked' : ''} /></label>
       </section></div>
@@ -242,16 +245,70 @@ export class UI {
     }
     this.overlay.querySelector('#soundPack')!.addEventListener('change', event => {
       this.settings.soundPack = (event.target as HTMLSelectElement).value as Settings['soundPack'];
-      this.overlay.querySelector('#pack-description')!.textContent = SOUND_PACKS[this.settings.soundPack].description;
+      this.overlay.querySelector('#pack-description')!.textContent = soundPackDescription(this.settings.soundPack);
       this.applySettings();
     });
     this.overlay.querySelector('#preview-sound')!.addEventListener('click', () => { void this.game.sound.preview(this.settings.primary); });
+    this.overlay.querySelector('#manage-sounds')!.addEventListener('click', () => this.customAudioDialog());
     this.overlay.querySelector('#reset-settings')!.addEventListener('click', () => {
       Object.assign(this.settings, { sensitivity: DEFAULTS.sensitivity, volume: DEFAULTS.volume, fov: DEFAULTS.fov, shadows: DEFAULTS.shadows, movementSpeed: DEFAULTS.movementSpeed, doubleJump: DEFAULTS.doubleJump, jumpGravity: DEFAULTS.jumpGravity, soundPack: DEFAULTS.soundPack });
       this.applySettings(); this.openSettings();
     });
     this.overlay.querySelector('.close-button')!.addEventListener('click', () => this.closeDialog());
     (this.overlay.querySelector('.close-button') as HTMLButtonElement).focus();
+  }
+
+  private customAudioDialog() {
+    this.overlay.hidden = false;
+    this.overlay.innerHTML = `<section class="dialog custom-audio-dialog" role="dialog" aria-modal="true" aria-labelledby="custom-audio-title">
+      <div class="dialog-title"><div><span class="eyebrow">YOUR GUNS. YOUR SOUND.</span><h2 id="custom-audio-title">CUSTOM SOUND PACK</h2></div><button class="close-button" aria-label="Back to settings">×</button></div>
+      <p>Choose one gunshot file for each weapon you want to replace. Files stay on this device; nothing is uploaded.</p>
+      <div class="custom-audio-rows">${CUSTOM_WEAPONS.map(id => `<div class="custom-audio-row">
+        <div><strong>${WEAPONS[id].name}</strong><span class="sample-name" data-sample-name="${id}">Classic fallback</span></div>
+        <div class="sample-actions"><label class="secondary-button file-picker">CHOOSE FILE<input type="file" id="custom-${id}" accept=".wav,.mp3,.ogg,audio/wav,audio/mpeg,audio/ogg" aria-label="Import ${WEAPONS[id].name} gunshot" /></label><button class="secondary-button" data-preview-audio="${id}" aria-label="Preview ${WEAPONS[id].name} custom gunshot">▶</button><button class="secondary-button" data-remove-audio="${id}" aria-label="Remove ${WEAPONS[id].name} custom gunshot">×</button></div>
+      </div>`).join('')}</div>
+      <p class="custom-audio-status" id="custom-audio-status" role="status" aria-live="polite">WAV / MP3 / OGG · max 2 MB and 5 seconds per file. PCM WAV is the most portable.</p>
+      <p class="dialog-footnote">Importing selects Custom automatically. Missing samples use Classic. Samples are saved in this browser's local database; clearing site data removes them. ZIP archives must be extracted first. Use audio you own or have permission to use.</p>
+      <button class="secondary-button" id="custom-audio-back">BACK TO SETTINGS</button>
+    </section>`;
+    const dialog = this.overlay.querySelector<HTMLElement>('.custom-audio-dialog')!;
+    const status = dialog.querySelector<HTMLElement>('#custom-audio-status')!;
+    let busy = false;
+    const refresh = () => {
+      for (const id of CUSTOM_WEAPONS) {
+        const name = this.game.sound.customName(id);
+        dialog.querySelector(`[data-sample-name="${id}"]`)!.textContent = name ?? 'Classic fallback';
+        dialog.querySelector<HTMLInputElement>(`#custom-${id}`)!.disabled = busy;
+        dialog.querySelector<HTMLButtonElement>(`[data-preview-audio="${id}"]`)!.disabled = busy || !name;
+        dialog.querySelector<HTMLButtonElement>(`[data-remove-audio="${id}"]`)!.disabled = busy || !name;
+      }
+    };
+    void this.game.sound.ready.then(refresh);
+    for (const id of CUSTOM_WEAPONS) {
+      const input = dialog.querySelector<HTMLInputElement>(`#custom-${id}`)!;
+      input.addEventListener('change', async () => {
+        const file = input.files?.[0]; if (!file || busy) return;
+        busy = true; refresh(); status.classList.remove('error'); status.textContent = 'Checking and loading audio…';
+        try {
+          const result = await this.game.sound.importShot(id, file);
+          this.settings.soundPack = 'custom'; this.applySettings();
+          status.textContent = result.persisted ? `${WEAPONS[id].name} loaded and saved locally. Custom pack selected.` : `${WEAPONS[id].name} loaded for this session only. Browser storage is unavailable or full.`;
+        } catch (error) {
+          status.textContent = error instanceof Error ? error.message : 'Could not import this audio.'; status.classList.add('error');
+        } finally { busy = false; input.value = ''; refresh(); }
+      });
+      dialog.querySelector(`[data-preview-audio="${id}"]`)!.addEventListener('click', () => { void this.game.sound.previewCustom(id); });
+      dialog.querySelector(`[data-remove-audio="${id}"]`)!.addEventListener('click', async () => {
+        if (busy) return; busy = true; refresh();
+        const result = await this.game.sound.removeCustomShot(id);
+        status.classList.remove('error');
+        status.textContent = result.persisted ? `${WEAPONS[id].name} removed. Classic fallback is active for this weapon.` : 'Removed for this session, but browser storage could not be updated.';
+        busy = false; refresh();
+      });
+    }
+    dialog.querySelector('.close-button')!.addEventListener('click', () => this.closeDialog());
+    dialog.querySelector('#custom-audio-back')!.addEventListener('click', () => this.closeDialog());
+    dialog.querySelector<HTMLButtonElement>('.close-button')!.focus();
   }
 
   private applySettings() {

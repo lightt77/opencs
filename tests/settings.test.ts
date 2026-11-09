@@ -22,6 +22,7 @@ describe('saved settings', () => {
   it('restores known sound packs and safely rejects unknown pack IDs', () => {
     stored({ soundPack: 'punchy' }); expect(loadSettings().soundPack).toBe('punchy');
     stored({ soundPack: 'suppressed' }); expect(loadSettings().soundPack).toBe('suppressed');
+    stored({ soundPack: 'custom' }); expect(loadSettings().soundPack).toBe('custom');
     stored({ soundPack: 'missing-pack' }); expect(loadSettings().soundPack).toBe('classic');
   });
 });
