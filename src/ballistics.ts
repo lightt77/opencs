@@ -1,5 +1,5 @@
 import type { Box, Point } from './math';
-import type { WeaponId } from './config';
+import type { Settings, WeaponId } from './config';
 
 export interface Point3 extends Point { y: number }
 
@@ -25,15 +25,21 @@ export function coverHits(origin: Point3, direction: Point3, boxes: Box[], range
   }).sort((a, b) => a.entry - b.entry);
 }
 
-export function penetration(weapon: WeaponId, hits: ReturnType<typeof coverHits>) {
+export function penetration(weapon: WeaponId, hits: ReturnType<typeof coverHits>, mode: Settings['wallShots'] = 'thin') {
   const budget = weapon === 'awp' ? 1.4 : weapon === 'ak' ? .9 : weapon === 'm4' ? .75 : weapon === 'pistol' ? .2 : 0;
   let spent = 0, multiplier = 1, layers = 0;
   for (const hit of hits) {
     const wood = hit.box.kind === 'door' || hit.box.kind === 'crate';
     const cost = (hit.exit - hit.entry) * (wood ? 1 : 2.5);
+    if (mode === 'off' || !budget) return { multiplier: 0, stop: hit.entry };
+    if (mode === 'walls') {
+      // Ordinary walls are penetrable, but thickness/material and every layer cost damage.
+      multiplier *= .65 * Math.exp(-cost / (budget * 8));
+      continue;
+    }
     spent += Math.max(.04, cost); layers++;
     if (!budget || spent > budget || layers > 2) return { multiplier: 0, stop: hit.entry };
     multiplier *= .7 * (1 - cost / budget * .5);
   }
-  return { multiplier, stop: undefined };
+  return { multiplier: mode === 'walls' && hits.length ? Math.max(.025, multiplier) : multiplier, stop: undefined };
 }

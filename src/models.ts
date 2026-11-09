@@ -92,8 +92,10 @@ export class Soldier {
   private gaitPhase = 0;
   private gaitAmount = 0;
   private crouchAmount = 0;
+  private heldWeapon: WeaponId;
 
   constructor(team: Team, name: string, weapon: WeaponId) {
+    this.heldWeapon = weapon;
     const uniform = material(team === 'blue' ? 0x405a64 : 0x82644e);
     const accent = material(TEAM_COLOR[team]);
     this.root.add(this.body);
@@ -139,6 +141,17 @@ export class Soldier {
   resetPose() {
     this.death = this.flash = this.gaitPhase = this.gaitAmount = this.crouchAmount = 0;
     this.body.position.set(0, 0, 0); this.body.rotation.set(0, 0, 0);
+  }
+
+  equip(id: WeaponId) {
+    if (this.heldWeapon === id) return;
+    this.heldWeapon = id;
+    this.body.remove(this.gun);
+    // Geometry belongs to this model; most materials are shared across operators.
+    this.gun.traverse(o => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
+    this.gun = weaponModel(id); this.gun.position.set(.17, 1.03, -.35);
+    this.gun.traverse(o => { o.userData.actor = this.root.userData.actor; if (o instanceof THREE.Mesh) o.raycast = () => {}; });
+    this.body.add(this.gun);
   }
 
   animate(dt: number, motion: Point, alive: boolean, reloading: boolean, grounded: boolean, crouched: boolean, deathAge = 0, deathHead = false) {

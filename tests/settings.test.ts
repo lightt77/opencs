@@ -25,9 +25,16 @@ describe('saved settings', () => {
     stored({ freezeTime: '2', roundEndDelay: null }); expect(loadSettings()).toMatchObject({ freezeTime: 3, roundEndDelay: 2.5 });
   });
   it('restores known sound packs and safely rejects unknown pack IDs', () => {
+    stored({ soundPack: 'assets' }); expect(loadSettings().soundPack).toBe('assets');
     stored({ soundPack: 'punchy' }); expect(loadSettings().soundPack).toBe('punchy');
     stored({ soundPack: 'suppressed' }); expect(loadSettings().soundPack).toBe('suppressed');
     stored({ soundPack: 'custom' }); expect(loadSettings().soundPack).toBe('custom');
     stored({ soundPack: 'missing-pack' }); expect(loadSettings().soundPack).toBe('classic');
+  });
+  it('migrates radio and match rules without accepting invalid or empty loadouts', () => {
+    stored({ effectsPack: 'missing', radioChatter: 'yes', radioVolume: 200, allowedWeapons: [], grenadeCapacity: 9, refillDelay: -1, wallShots: 'missing' });
+    expect(loadSettings()).toMatchObject({ effectsPack: 'assets', radioChatter: true, radioVolume: 100, allowedWeapons: DEFAULTS.allowedWeapons, grenadeCapacity: 3, refillDelay: 1, wallShots: 'walls' });
+    stored({ allowedWeapons: ['knife', 'bad'], radioChatter: false, effectsPack: 'classic', grenadeCapacity: 2, refillDelay: 12, wallShots: 'off' });
+    expect(loadSettings()).toMatchObject({ allowedWeapons: ['knife'], radioChatter: false, effectsPack: 'classic', grenadeCapacity: 2, refillDelay: 12, wallShots: 'off' });
   });
 });

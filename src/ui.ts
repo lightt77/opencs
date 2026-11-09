@@ -1,5 +1,5 @@
 import type { Game } from './game';
-import { DEFAULTS, ROUND_LIMIT, TDM_LIMIT, WEAPONS, isGrenade, loadSettings, type Settings } from './config';
+import { DEFAULTS, PRIMARIES, ROUND_LIMIT, TDM_LIMIT, WEAPON_IDS, WEAPONS, isGrenade, loadSettings, type Settings, type WeaponId } from './config';
 import { MAPS, type Arena } from './maps';
 import { clamp } from './math';
 import { SOUND_PACKS, soundPackDescription } from './audio';
@@ -100,8 +100,9 @@ export class UI {
             </div>
             <div class="control-label"><span>BOT DIFFICULTY</span><span>AIM + REACTION</span></div>
             <div class="segments" role="group" aria-label="Bot difficulty">${(['easy', 'medium', 'hard'] as const).map(d => `<button data-difficulty="${d}" class="${s.difficulty === d ? 'selected' : ''}" aria-pressed="${s.difficulty === d}">${d.toUpperCase()}</button>`).join('')}</div>
-            <div class="control-label"><span>PRIMARY WEAPON</span><span>${s.map === 'longshot' ? 'AWP RECOMMENDED' : '+ USP & UTILITY'}</span></div>
-            <div class="segments weapons" role="group" aria-label="Primary weapon">${(['ak', 'm4', 'awp'] as const).map(id => `<button data-primary="${id}" class="${s.primary === id ? 'selected' : ''}" aria-pressed="${s.primary === id}"><span class="weapon-glyph">${id === 'awp' ? '━╋━' : '━┳┓'}</span>${WEAPONS[id].name}</button>`).join('')}</div>
+             <div class="control-label"><span>PRIMARY WEAPON</span><span>${s.map === 'longshot' ? 'AWP RECOMMENDED' : 'ALLOWED LOADOUT'}</span></div>
+             <div class="segments weapons" role="group" aria-label="Primary weapon">${PRIMARIES.map(id => `<button data-primary="${id}" ${s.allowedWeapons.includes(id) ? '' : 'disabled'} class="${s.primary === id && s.allowedWeapons.includes(id) ? 'selected' : ''}" aria-pressed="${s.primary === id && s.allowedWeapons.includes(id)}"><span class="weapon-glyph">${id === 'awp' ? '━╋━' : '━┳┓'}</span>${WEAPONS[id].name}</button>`).join('')}</div>
+             <button class="secondary-button rules-button" id="weapon-rules">WEAPON RULES · ${s.allowedWeapons.map(id => WEAPONS[id].short).join(' + ')}</button>
             <div class="squad-note"><span class="status-dot"></span> YOU + 4 ALLIES <span>VS</span> 5 ENEMY BOTS</div>
             <button class="deploy-button" id="deploy"><span>DEPLOY TO ${s.map.toUpperCase()}</span>${arrow}</button>
             <p class="deploy-note">NO LOBBY. NO LOGIN. JUST PLAY.</p>
@@ -125,6 +126,7 @@ export class UI {
     this.menu.querySelector('#deploy')!.addEventListener('click', () => { this.save(); this.game.start(this.settings); });
     this.menu.querySelector('#open-settings')!.addEventListener('click', () => this.openSettings());
     this.menu.querySelector('#open-controls')!.addEventListener('click', () => this.controls());
+    this.menu.querySelector('#weapon-rules')!.addEventListener('click', () => { this.openSettings(); this.overlay.querySelector('#match-rules')!.scrollIntoView(); });
   }
 
   private buildHUD() {
@@ -135,6 +137,8 @@ export class UI {
       <div class="match-strip"><div class="team-score blue"><span>BLUE</span><b id="blue-score">0</b></div><div class="match-clock"><strong id="clock">06:00</strong><span id="match-label">FIRST TO 40</span></div><div class="team-score red"><b id="red-score">0</b><span>RED</span></div></div>
       <div class="performance"><b id="fps">60 FPS</b><span>LOCAL MATCH · <span id="difficulty-label">MEDIUM</span></span></div>
       <div class="kill-feed" id="kill-feed"></div>
+      <div class="radio-message" id="radio-message" aria-live="polite" hidden></div>
+      <div class="grenade-charge" id="grenade-charge" hidden><span id="charge-label"></span><progress id="charge-progress" max="1" value="0"></progress></div>
       <div class="announcement" id="announcement"></div>
       <div class="crosshair" id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
       <div class="hit-marker" id="hit-marker">╳</div>
@@ -179,13 +183,15 @@ export class UI {
 
   private roundLoadout() {
     const g = this.game;
-    let selected = this.settings.primary;
+    let selected = PRIMARIES.find(id => id === this.settings.primary && g.settings.allowedWeapons.includes(id)) ?? PRIMARIES.find(id => g.settings.allowedWeapons.includes(id)) ?? this.settings.primary;
     this.overlay.innerHTML = `<section class="dialog round-loadout" role="dialog" aria-modal="true" aria-labelledby="round-loadout-title">
       <span class="eyebrow">ROUND ${g.round} COMPLETE · BLUE ${g.scores.blue} : ${g.scores.red} RED</span>
       <h2 id="round-loadout-title">NEXT ROUND LOADOUT</h2><p>${g.announcement}<br>Choose your primary for round ${g.round + 1}. No rush—the match is waiting.</p>
       <div class="result-score round-score" aria-label="Total team scores"><span class="blue-text">${g.scores.blue}<small>BLUE ROUNDS · ${g.actors.filter(a => a.team === 'blue').reduce((sum, a) => sum + a.kills, 0)} KILLS</small></span><i>:</i><span class="red-text">${g.scores.red}<small>RED ROUNDS · ${g.actors.filter(a => a.team === 'red').reduce((sum, a) => sum + a.kills, 0)} KILLS</small></span></div>
-      <div class="segments weapons" role="group" aria-label="Next round primary">${(['ak', 'm4', 'awp'] as const).map(id => `<button data-round-primary="${id}" class="${id === selected ? 'selected' : ''}" aria-pressed="${id === selected}">${WEAPONS[id].name}</button>`).join('')}</div>
-      <p class="loadout-note">USP, knife, grenades, and ammunition replenish at round start. Your score is preserved.</p>
+      <div class="round-board" aria-label="Player scores">${this.scoreboardHTML(true)}</div>
+      <div class="segments weapons" role="group" aria-label="Next round primary">${PRIMARIES.filter(id => g.settings.allowedWeapons.includes(id)).map(id => `<button data-round-primary="${id}" class="${id === selected ? 'selected' : ''}" aria-pressed="${id === selected}">${WEAPONS[id].name}</button>`).join('')}</div>
+      <p class="loadout-note">Allowed weapons: ${g.settings.allowedWeapons.map(id => WEAPONS[id].short).join(' + ')}. Allowed ammunition and up to ${g.settings.grenadeCapacity} total grenades replenish at round start. Scores persist.</p>
+      <button class="secondary-button rules-button" id="round-rules">CHANGE NEXT ROUND WEAPON RULES</button>
       <button class="deploy-button" id="continue-round"><span>START ROUND ${g.round + 1}</span>${arrow}</button>
       <button class="text-button exit-button" id="loadout-leave">LEAVE MATCH</button>
     </section>`;
@@ -199,13 +205,15 @@ export class UI {
       if (g.continueRound(selected)) { this.settings.primary = selected; this.save(); }
     });
     this.overlay.querySelector('#loadout-leave')!.addEventListener('click', () => g.toMenu());
-    this.overlay.querySelector<HTMLButtonElement>('[aria-pressed="true"]')!.focus();
+    this.overlay.querySelector('#round-rules')!.addEventListener('click', () => { this.openSettings(); this.overlay.querySelector('#match-rules')!.scrollIntoView(); });
+    this.overlay.querySelector<HTMLButtonElement>('[aria-pressed="true"], #continue-round')!.focus({ preventScroll: true });
   }
 
   private closeDialog() {
     if (this.overlay.querySelector('.custom-audio-dialog')) { this.openSettings(); return; }
     if (this.game.screen === 'paused') this.pauseHTML();
-    else { this.overlay.hidden = true; this.overlay.innerHTML = ''; }
+    else if (this.game.screen === 'loadout') this.roundLoadout();
+    else { this.overlay.hidden = true; this.overlay.innerHTML = ''; if (this.game.screen === 'menu') { this.game.preview(this.settings); this.renderMenu(); } }
   }
 
   private openSettings() {
@@ -225,29 +233,57 @@ export class UI {
       </section><section aria-labelledby="audio-video-title"><h3 id="audio-video-title">AUDIO & VIDEO</h3>
       <label class="slider-label" for="volume">MASTER VOLUME <output>${s.volume}%</output></label><input id="volume" type="range" min="0" max="100" value="${s.volume}" />
       <label class="slider-label" for="soundPack">GUNSHOT SOUND PACK</label>
-      <select id="soundPack" class="pack-select">${Object.entries(SOUND_PACKS).map(([id, pack]) => `<option value="${id}" ${s.soundPack === id ? 'selected' : ''}>${pack.name}</option>`).join('')}<option value="custom" ${s.soundPack === 'custom' ? 'selected' : ''}>CUSTOM / YOUR FILES</option></select>
+      <select id="soundPack" class="pack-select">${Object.entries(SOUND_PACKS).map(([id, pack]) => `<option value="${id}" ${s.soundPack === id ? 'selected' : ''}>${pack.name}</option>`).join('')}<option value="assets" ${s.soundPack === 'assets' ? 'selected' : ''}>ASSET RECORDINGS</option><option value="custom" ${s.soundPack === 'custom' ? 'selected' : ''}>CUSTOM / YOUR FILES</option></select>
       <p class="pack-description" id="pack-description">${soundPackDescription(s.soundPack)}</p>
       <button class="secondary-button preview-sound" id="preview-sound">▶ PREVIEW ${WEAPONS[s.primary].name} GUNSHOT</button>
       <button class="secondary-button manage-sounds" id="manage-sounds">IMPORT / MANAGE CUSTOM SOUNDS</button>
+      <label class="slider-label" for="effectsPack">MOVEMENT & EFFECT SOUNDS</label><select id="effectsPack" class="pack-select"><option value="assets" ${s.effectsPack === 'assets' ? 'selected' : ''}>ASSET RECORDINGS</option><option value="classic" ${s.effectsPack === 'classic' ? 'selected' : ''}>CLASSIC SYNTHESIZED</option></select>
+      <p class="settings-hint">Footsteps, jumps, scope zoom, reloads, HE and flash sounds.</p>
+      <label class="checkbox-label"><span>RADIO CHATTER & DEATH VOICES <small>Team observations, reactions and victories. No overlapping radio callouts.</small></span><input id="radioChatter" type="checkbox" ${s.radioChatter ? 'checked' : ''} /></label>
+      <label class="slider-label" for="radioVolume">VOICE VOLUME <output>${s.radioVolume}%</output></label><input id="radioVolume" type="range" min="0" max="100" value="${s.radioVolume}" />
       <label class="slider-label" for="fov">FIELD OF VIEW <output>${s.fov}°</output></label><input id="fov" type="range" min="70" max="105" value="${s.fov}" />
       <label class="checkbox-label"><span>SOFT SHADOWS <small>Turn off for a lighter GPU workload.</small></span><input id="shadows" type="checkbox" ${s.shadows ? 'checked' : ''} /></label>
       </section></div>
+      <section id="match-rules"><h3>MATCH WEAPON RULES · BOTH TEAMS</h3>
+      <div class="rule-presets">${['all', 'awp', 'awp-ak', 'usp', 'knife', 'grenades'].map(id => `<button class="secondary-button" data-preset="${id}">${({ all: 'ALL', awp: 'AWP ONLY', 'awp-ak': 'AWP + AK', usp: 'USP ONLY', knife: 'KNIFE ONLY', grenades: 'GRENADES ONLY' })[id]}</button>`).join('')}</div>
+      <div class="weapon-rules" role="group" aria-label="Allowed weapons">${WEAPON_IDS.map(id => `<label><input type="checkbox" data-allowed="${id}" ${s.allowedWeapons.includes(id) ? 'checked' : ''} />${WEAPONS[id].name}</label>`).join('')}</div>
+      <p class="settings-hint" id="rules-hint">One allowed primary per operator, plus allowed sidearm/knife/utility. At least one weapon must remain enabled. Changes apply on deployment or next round; grenades-only elimination has limited ammunition.</p>
+      <label class="slider-label" for="grenadeCapacity">TOTAL CARRIED GRENADES <output>${s.grenadeCapacity}</output></label><input id="grenadeCapacity" type="range" min="1" max="3" step="1" value="${s.grenadeCapacity}" />
+      <label class="slider-label" for="refillDelay">DEATHMATCH REFILL DELAY <output>${s.refillDelay}s</output></label><input id="refillDelay" type="range" min="1" max="30" step="1" value="${s.refillDelay}" />
+      <label class="slider-label" for="wallShots">BULLET WALL PENETRATION</label><select id="wallShots" class="pack-select"><option value="walls" ${s.wallShots === 'walls' ? 'selected' : ''}>ALL WALLS · REDUCED DAMAGE</option><option value="thin" ${s.wallShots === 'thin' ? 'selected' : ''}>THIN COVER ONLY</option><option value="off" ${s.wallShots === 'off' ? 'selected' : ''}>OFF</option></select><p class="settings-hint">Floors always block bullets. Bots still need line of sight.</p>
+      </section>
       <button class="secondary-button" id="reset-settings">RESTORE DEFAULTS</button><p class="dialog-footnote">Saved on this device. Match options stay unchanged.</p>
     </section>`;
-    for (const key of ['sensitivity', 'volume', 'fov', 'movementSpeed', 'jumpGravity', 'freezeTime', 'roundEndDelay'] as const) {
+    for (const key of ['sensitivity', 'volume', 'fov', 'movementSpeed', 'jumpGravity', 'freezeTime', 'roundEndDelay', 'radioVolume', 'grenadeCapacity', 'refillDelay'] as const) {
       const input = this.overlay.querySelector<HTMLInputElement>(`#${key}`)!;
       input.addEventListener('input', () => {
         this.settings[key] = Number(input.value);
         const value = this.settings[key];
-        input.previousElementSibling!.querySelector('output')!.textContent = key === 'sensitivity' ? value.toFixed(2) : key === 'movementSpeed' ? `${value.toFixed(1)}×` : `${value}${key === 'fov' ? '°' : key === 'jumpGravity' ? ' m/s²' : key === 'freezeTime' || key === 'roundEndDelay' ? 's' : '%'}`;
+        input.previousElementSibling!.querySelector('output')!.textContent = key === 'sensitivity' ? value.toFixed(2) : key === 'movementSpeed' ? `${value.toFixed(1)}×` : `${value}${key === 'fov' ? '°' : key === 'jumpGravity' ? ' m/s²' : key === 'freezeTime' || key === 'roundEndDelay' || key === 'refillDelay' ? 's' : key === 'grenadeCapacity' ? '' : '%'}`;
         this.applySettings();
       });
     }
-    for (const key of ['shadows', 'doubleJump'] as const) {
+    for (const key of ['shadows', 'doubleJump', 'radioChatter'] as const) {
       this.overlay.querySelector(`#${key}`)!.addEventListener('change', event => {
         this.settings[key] = (event.target as HTMLInputElement).checked; this.applySettings();
       });
     }
+    for (const key of ['effectsPack', 'wallShots'] as const) this.overlay.querySelector(`#${key}`)!.addEventListener('change', event => {
+      Object.assign(this.settings, { [key]: (event.target as HTMLSelectElement).value }); this.applySettings();
+    });
+    const updateRules = (weapons: WeaponId[]) => {
+      if (!weapons.length) { this.overlay.querySelector('#rules-hint')!.textContent = 'Keep at least one weapon enabled.'; return false; }
+      this.settings.allowedWeapons = weapons;
+      if (!weapons.includes(this.settings.primary)) this.settings.primary = PRIMARIES.find(id => weapons.includes(id)) ?? this.settings.primary;
+      this.overlay.querySelectorAll<HTMLInputElement>('[data-allowed]').forEach(input => { input.checked = weapons.includes(input.dataset.allowed as WeaponId); });
+      this.applySettings(); return true;
+    };
+    this.overlay.querySelectorAll<HTMLInputElement>('[data-allowed]').forEach(input => input.addEventListener('change', () => {
+      const weapons = WEAPON_IDS.filter(id => this.overlay.querySelector<HTMLInputElement>(`[data-allowed="${id}"]`)!.checked);
+      if (!updateRules(weapons)) input.checked = true;
+    }));
+    const presets: Record<string, WeaponId[]> = { all: [...WEAPON_IDS], awp: ['awp'], 'awp-ak': ['ak', 'awp'], usp: ['pistol'], knife: ['knife'], grenades: ['he', 'flash', 'smoke'] };
+    this.overlay.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach(button => button.addEventListener('click', () => { updateRules(presets[button.dataset.preset!]); }));
     this.overlay.querySelector('#soundPack')!.addEventListener('change', event => {
       this.settings.soundPack = (event.target as HTMLSelectElement).value as Settings['soundPack'];
       this.overlay.querySelector('#pack-description')!.textContent = soundPackDescription(this.settings.soundPack);
@@ -256,7 +292,7 @@ export class UI {
     this.overlay.querySelector('#preview-sound')!.addEventListener('click', () => { void this.game.sound.preview(this.settings.primary); });
     this.overlay.querySelector('#manage-sounds')!.addEventListener('click', () => this.customAudioDialog());
     this.overlay.querySelector('#reset-settings')!.addEventListener('click', () => {
-      Object.assign(this.settings, { sensitivity: DEFAULTS.sensitivity, volume: DEFAULTS.volume, fov: DEFAULTS.fov, shadows: DEFAULTS.shadows, movementSpeed: DEFAULTS.movementSpeed, doubleJump: DEFAULTS.doubleJump, jumpGravity: DEFAULTS.jumpGravity, soundPack: DEFAULTS.soundPack, freezeTime: DEFAULTS.freezeTime, roundEndDelay: DEFAULTS.roundEndDelay });
+      Object.assign(this.settings, { sensitivity: DEFAULTS.sensitivity, volume: DEFAULTS.volume, fov: DEFAULTS.fov, shadows: DEFAULTS.shadows, movementSpeed: DEFAULTS.movementSpeed, doubleJump: DEFAULTS.doubleJump, jumpGravity: DEFAULTS.jumpGravity, soundPack: DEFAULTS.soundPack, freezeTime: DEFAULTS.freezeTime, roundEndDelay: DEFAULTS.roundEndDelay, effectsPack: DEFAULTS.effectsPack, radioChatter: DEFAULTS.radioChatter, radioVolume: DEFAULTS.radioVolume });
       this.applySettings(); this.openSettings();
     });
     this.overlay.querySelector('.close-button')!.addEventListener('click', () => this.closeDialog());
@@ -318,8 +354,7 @@ export class UI {
 
   private applySettings() {
     this.save(); Object.assign(this.game.settings, this.settings);
-    this.game.sound.volume = this.settings.volume / 100;
-    this.game.sound.pack = this.settings.soundPack;
+    this.game.configureAudio(this.settings);
     this.game.view.renderer.shadowMap.enabled = this.settings.shadows;
   }
 
@@ -327,7 +362,7 @@ export class UI {
     this.overlay.hidden = false;
     this.overlay.innerHTML = `<section class="dialog manual-dialog" role="dialog" aria-modal="true" aria-labelledby="manual-title"><div class="dialog-title"><div><span class="eyebrow">READ THE ROOM. THEN CLEAR IT.</span><h2 id="manual-title">FIELD MANUAL</h2></div><button class="close-button" aria-label="Close manual">×</button></div>
       <div class="manual-grid">${[
-        ['W A S D', 'Move'], ['SHIFT + W', 'Sprint (louder footsteps)'], ['SPACE', 'Jump / optional air jump'], ['CTRL / C', 'Hold crouch / quiet movement'], ['LMB', 'Fire / throw (stops sprint)'], ['RMB', 'AWP: zoom → 2× zoom → off'], ['R', 'Reload'], ['Q / Q Q', 'Last weapon / faster AWP cycle'], ['1 / 2 / 3', 'Primary / pistol / knife'], ['4 / 5 / 6', 'HE / flash / smoke'], ['WHEEL', 'Cycle weapons'], ['TAB', 'Scoreboard'], ['ESC', 'Pause & release mouse'],
+        ['W A S D', 'Move'], ['SHIFT + W', 'Sprint (louder footsteps)'], ['SPACE', 'Jump / optional air jump'], ['CTRL / C', 'Hold crouch / quiet movement'], ['LMB', 'Fire / hold to charge grenade, release to throw'], ['RMB', 'AWP: zoom → 2× zoom → off'], ['R', 'Reload'], ['Q / Q Q', 'Last weapon / faster AWP cycle'], ['1 — 6', 'Equip allowed inventory slot (see HUD)'], ['WHEEL', 'Cycle weapons'], ['TAB', 'Scoreboard'], ['ESC', 'Pause & release mouse'],
       ].map(([key, label]) => `<div><span>${label}</span><kbd>${key}</kbd></div>`).join('')}</div>
       <div class="tips"><strong>STEADY FEET. STEADY AIM.</strong><p>Stop or counter-strafe before shooting. Fire short bursts at range. Footsteps and gunfire reveal your position to bots. Smoke blocks their sight; flashbangs disrupt their aim. Friendly fire is off, but your own HE can hurt you.</p></div>
       <p class="dialog-footnote">Elimination: first to ${ROUND_LIMIT} rounds. On timeout, surviving players then total health decide the round. A draw awards no point. Matches end after 15 rounds.</p>
@@ -341,6 +376,7 @@ export class UI {
     this.overlay.innerHTML = `<section class="dialog results-dialog"><span class="eyebrow">MISSION COMPLETE / ${g.arena.name}</span><h2>${g.winner === 'draw' ? 'STALEMATE.' : g.winner === 'blue' ? 'GROUND TAKEN.' : 'LIVE. LEARN. RELOAD.'}</h2><p>${g.winner === 'draw' ? 'An even match. Settle it in the next one.' : `${g.winner.toUpperCase()} TEAM WINS THE MATCH`}</p>
       <div class="result-score"><span class="blue-text">${g.scores.blue}<small>BLUE TEAM</small></span><i>:</i><span class="red-text">${g.scores.red}<small>RED TEAM</small></span></div>
       <div class="personal-stats"><div><b>${g.player.kills}</b><span>KILLS</span></div><div><b>${g.player.deaths}</b><span>DEATHS</span></div><div><b>${(g.player.kills / Math.max(1, g.player.deaths)).toFixed(1)}</b><span>K / D</span></div></div>
+      <div class="round-board" aria-label="Player scores">${this.scoreboardHTML(true)}</div>
       <button class="deploy-button" id="rematch"><span>RUN IT BACK</span>${arrow}</button><button class="text-button exit-button" id="back-menu">BACK TO MISSION SETUP</button>
     </section>`;
     this.overlay.querySelector('#rematch')!.addEventListener('click', () => this.game.start(this.settings));
@@ -362,7 +398,15 @@ export class UI {
     e['flash-wash'].style.opacity = String(clamp(p.flash / 1.8, 0, .98));
     e['smoke-wash'].style.opacity = String(g.smokeOpacity);
     e['scope'].hidden = !g.scoped || !p.alive;
-    e['crosshair'].hidden = g.scoped || !p.alive;
+    e['crosshair'].hidden = p.weapon === 'awp' || g.scoped || !p.alive;
+    const radio = g.radio.message;
+    e['radio-message'].hidden = !g.settings.radioChatter || !radio || g.time >= radio.until;
+    if (radio) this.set('radio-message', `[RADIO] ${radio.speaker}: ${radio.text}`);
+    e['grenade-charge'].hidden = g.grenadeCharge === undefined || !p.alive;
+    if (g.grenadeCharge !== undefined) {
+      (e['charge-progress'] as HTMLProgressElement).value = g.grenadeCharge;
+      this.set('charge-label', `THROW POWER ${Math.round(g.grenadeCharge * 100)}% · RELEASE LMB`);
+    }
     const gap = 4 + p.speed * 1.3 + p.shots * .8 + (p.body.grounded ? 0 : 12);
     e['crosshair'].style.setProperty('--gap', `${gap}px`);
     e['hit-marker'].style.opacity = String(Math.max(0, 1 - (g.time - g.hitTime) / .23));
@@ -382,14 +426,15 @@ export class UI {
     this.set('weapon-name', WEAPONS[p.weapon].name);
     this.set('clip', p.weapon === 'knife' ? '∞' : String(p.ammo[p.weapon].clip));
     this.set('reserve', String(p.ammo[p.weapon].reserve));
-    this.set('weapon-status', p.sprinting ? 'SPRINTING · FIRE TO READY WEAPON' : p.body.crouched ? 'CROUCHED · QUIET STEPS' : p.reload > 0 ? `RELOADING · ${p.reload.toFixed(1)}s` : p.immunity > 0 ? 'SPAWN PROTECTION' : p.weapon === 'awp' ? `RMB: ZOOM ${g.scopeLevel}/2 · Q Q QUICK CYCLE` : isGrenade(p.weapon) ? 'LMB TO THROW' : p.weapon === 'knife' ? 'CLOSE QUARTERS' : 'STOP TO SHOOT ACCURATELY');
+    const refill = p.refillTimers[p.weapon];
+    this.set('weapon-status', g.grenadeCharge !== undefined ? 'HOLD TO CHARGE · RELEASE TO THROW' : p.reload > 0 ? `RELOADING · ${p.reload.toFixed(1)}s` : refill !== undefined ? `AUTO REFILL IN ${Math.ceil(refill)}s` : p.sprinting ? 'SPRINTING · FIRE TO READY WEAPON' : p.body.crouched ? 'CROUCHED · QUIET STEPS' : p.immunity > 0 ? 'SPAWN PROTECTION' : p.weapon === 'awp' ? `RMB: ZOOM ${g.scopeLevel}/2 · Q Q QUICK CYCLE` : isGrenade(p.weapon) ? 'HOLD LMB · RELEASE TO THROW' : p.weapon === 'knife' ? 'CLOSE QUARTERS' : 'STOP TO SHOOT ACCURATELY');
     this.set('announcement', g.phase === 'warmup' ? `GET READY · ${Math.ceil(g.phaseTime)}` : g.announcementTime > 0 ? g.announcement : '');
     e['announcement'].classList.toggle('visible', !!e['announcement'].textContent);
     const feed = g.kills.filter(k => g.time - k.time < 7).map(k => `<div><b class="${k.team}-text">${k.killer}</b><span>${WEAPONS[k.weapon].short}${k.head ? ' ⊕' : ''}</span><b class="${k.team === 'blue' ? 'red' : 'blue'}-text">${k.victim}</b></div>`).join('');
     if (e['kill-feed'].innerHTML !== feed) e['kill-feed'].innerHTML = feed;
     e['death-card'].hidden = p.alive;
     if (!p.alive) e['death-card'].innerHTML = `<span>${g.settings.mode === 'tdm' ? `BACK IN ${Math.max(1, Math.ceil(p.respawn))}` : 'YOU ARE ELIMINATED'}</span><strong>${g.spectating ? `WATCHING ${g.spectating.toUpperCase()}` : 'WAITING FOR NEXT ROUND'}</strong><small>${g.settings.mode === 'tdm' ? 'Regroup. Find another angle.' : 'Your squad is still in the fight.'}</small>`;
-    const slots = p.weapons.map((id, i) => `<div class="${id === p.weapon ? 'active' : ''} ${isGrenade(id) && !p.ammo[id].clip ? 'empty' : ''}"><kbd>${i + 1}</kbd><span>${WEAPONS[id].short}</span></div>`).join('');
+    const slots = p.weapons.map((id, i) => `<div class="${id === p.weapon ? 'active' : ''} ${isGrenade(id) && !p.ammo[id].clip ? 'empty' : ''}"><kbd>${i + 1}</kbd><span>${WEAPONS[id].short}${isGrenade(id) ? ` ×${p.ammo[id].clip}` : ''}</span></div>`).join('');
     if (e['weapon-slots'].innerHTML !== slots) e['weapon-slots'].innerHTML = slots;
     e['scoreboard'].hidden = !g.scoreboard;
     if (g.scoreboard) this.drawScoreboard();
@@ -397,9 +442,14 @@ export class UI {
   }
 
   private drawScoreboard() {
-    const g = this.game;
-    const content = `<div class="scoreboard-heading"><span>${g.arena.name} / ${g.settings.mode === 'tdm' ? 'TEAM DEATHMATCH' : 'ELIMINATION'}</span><span>LOCAL MATCH</span></div><h2>SQUAD STATUS</h2>${(['blue', 'red'] as const).map(team => `<div class="scoreboard-team ${team}-text"><span>${team.toUpperCase()} TEAM</span><span>${g.scores[team]}</span></div><div class="scoreboard-row board-labels"><span>OPERATOR</span><span>K</span><span>D</span><span>STATUS</span></div>${g.actors.filter(a => a.team === team).sort((a, b) => b.kills - a.kills).map(a => `<div class="scoreboard-row ${a.human ? 'is-you' : ''}"><span>${a.name}${a.human ? ' <small>/ YOU</small>' : ''}</span><span>${a.kills}</span><span>${a.deaths}</span><span class="${a.alive ? 'alive' : 'dead'}">${a.alive ? 'ACTIVE' : 'DOWN'}</span></div>`).join('')}`).join('')}<p>HOLD TAB TO VIEW · RELEASE TO CLOSE</p>`;
+    const content = this.scoreboardHTML();
     if (content !== this.lastBoard) { this.hudElements['scoreboard'].innerHTML = content; this.lastBoard = content; }
+  }
+
+  private scoreboardHTML(intermission = false) {
+    const g = this.game;
+    const teams = (['blue', 'red'] as const).map(team => `<section class="board-team"><div class="scoreboard-team ${team}-text"><span>${team.toUpperCase()} TEAM</span><span>${g.scores[team]}</span></div><div class="scoreboard-row board-labels"><span>OPERATOR</span><span>K</span><span>D</span><span>STATUS</span></div>${g.actors.filter(a => a.team === team).sort((a, b) => b.kills - a.kills).map(a => `<div class="scoreboard-row ${a.human ? 'is-you' : ''}"><span>${a.name}${a.human ? ' <small>/ YOU</small>' : ''}</span><span>${a.kills}</span><span>${a.deaths}</span><span class="${a.alive ? 'alive' : 'dead'}">${a.alive ? 'ACTIVE' : 'DOWN'}</span></div>`).join('')}</section>`).join('');
+    return `<div class="scoreboard-heading"><span>${g.arena.name} / ${g.settings.mode === 'tdm' ? 'TEAM DEATHMATCH' : 'ELIMINATION'}</span><span>LOCAL MATCH</span></div><h2>SQUAD STATUS</h2><div class="board-teams">${teams}</div>${intermission ? '' : '<p>HOLD TAB TO VIEW · RELEASE TO CLOSE</p>'}`;
   }
 
   private drawDamageNumbers() {

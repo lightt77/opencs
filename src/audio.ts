@@ -1,6 +1,7 @@
 import type { BuiltinSoundPack, FirearmId, SoundPack, WeaponId } from './config';
 import type { Point } from './math';
 import { deleteStoredShot, loadStoredShots, saveStoredShot, validateAudioFile, validateDecodedShot, type StoredShot } from './custom-audio';
+import { ASSET_SHOTS, AUDIO_ASSETS, RADIO_LINES } from './audio-assets';
 
 export const SOUND_PACKS = {
   classic: { name: 'CLASSIC', description: 'Dry reports, a metallic edge, and an old-school low-end thump.', duration: 1, cutoff: 1, gain: 1, pitch: 1, waveform: 'triangle', tail: false, toneLevel: .65 },
@@ -9,7 +10,7 @@ export const SOUND_PACKS = {
 } satisfies Record<BuiltinSoundPack, { name: string; description: string; duration: number; cutoff: number; gain: number; pitch: number; waveform: OscillatorType; tail: boolean; toneLevel: number }>;
 
 export function soundPackDescription(pack: SoundPack) {
-  return pack === 'custom' ? 'Your own local audio. Weapons without a sample fall back to Classic.' : SOUND_PACKS[pack].description;
+  return pack === 'assets' ? 'The weapon recordings supplied in assets/sounds. Missing or unsupported clips fall back to Classic.' : pack === 'custom' ? 'Your own local audio. Weapons without a sample fall back to Classic.' : SOUND_PACKS[pack].description;
 }
 
 export class Sound {
@@ -19,6 +20,13 @@ export class Sound {
   private listener = { x: 0, z: 0, yaw: 0 };
   volume = .65;
   pack: SoundPack = 'classic';
+  effectsPack: 'classic' | 'assets' = 'assets';
+  radioEnabled = true;
+  radioVolume = .7;
+  private assets = new Map<string, AudioBuffer>();
+  private assetsLoading?: Promise<void>;
+  private radioSource?: AudioBufferSourceNode;
+  private painUntil = 0;
   private custom = new Map<FirearmId, StoredShot & { buffer?: AudioBuffer }>();
   private decoding?: Promise<void>;
   readonly ready = loadStoredShots().then(records => { for (const record of records) this.custom.set(record.id, record); }).catch(() => {});
@@ -41,7 +49,42 @@ export class Sound {
       await this.context.resume();
       await this.ready;
       await this.decodeCustom();
+      await this.loadAssets();
     } catch { /* The game remains playable without an audio device. */ }
+  }
+
+  private loadAssets() {
+    if (!this.context) return;
+    const ctx = this.context;
+    return this.assetsLoading ??= Promise.all(Object.entries(AUDIO_ASSETS).map(async ([id, url]) => {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) return;
+        this.assets.set(id, await ctx.decodeAudioData(await response.arrayBuffer()));
+      } catch { /* Supplied audio is optional; synthesized effects remain available. */ }
+    })).then(() => {});
+  }
+
+  hasAsset(id: string) { return this.assets.has(id); }
+
+  stopRadio() { this.radioSource?.stop(); this.radioSource = undefined; }
+
+  radio(clip: string, priority = false) {
+    if (!this.radioEnabled || this.radioVolume <= 0) return 0;
+    if (priority) this.stopRadio();
+    const sample = this.assets.get(clip);
+    if (!sample) return 0;
+    this.radioSource = this.playBuffer(sample, undefined, this.radioVolume * .9);
+    return sample.duration;
+  }
+
+  death(position?: Point) {
+    const now = this.context?.currentTime ?? 0;
+    if (!this.radioEnabled || this.radioVolume <= 0 || now < this.painUntil) return;
+    this.painUntil = now + .25;
+    const clips = RADIO_LINES.death;
+    const sample = this.assets.get(clips[Math.floor(Math.random() * clips.length)]);
+    if (sample) this.playBuffer(sample, position, this.radioVolume * .65);
   }
 
   private async decodeCustom() {
@@ -122,20 +165,34 @@ export class Sound {
   shot(id: WeaponId, position?: Point) {
     if (id === 'knife') return this.burst(.12, 900, .28, position, 250);
     const sniper = id === 'awp';
-    const sample = this.pack === 'custom' ? this.custom.get(id as FirearmId)?.buffer : undefined;
+    const sample = this.pack === 'custom' ? this.custom.get(id as FirearmId)?.buffer : this.pack === 'assets' ? this.assets.get(ASSET_SHOTS[id as FirearmId]) : undefined;
     if (sample) {
       this.playSample(sample, id, position); return;
     }
-    const profile = SOUND_PACKS[this.pack === 'custom' ? 'classic' : this.pack];
+    const profile = SOUND_PACKS[this.pack === 'custom' || this.pack === 'assets' ? 'classic' : this.pack];
     const frequency = (id === 'pistol' ? 3200 : id === 'ak' ? 2800 : id === 'm4' ? 2200 : 1900) * profile.cutoff;
     this.burst((sniper ? .55 : id === 'pistol' ? .13 : .19) * profile.duration, frequency, (sniper ? 1 : .7) * profile.gain, position, (sniper ? 95 : 160) * profile.pitch, { waveform: profile.waveform, filterEnd: frequency * .28, toneLevel: profile.toneLevel });
     if (profile.tail) this.burst(sniper ? .7 : .3, 550, sniper ? .2 : .09, position, 60, { waveform: 'sine', toneLevel: .25 });
   }
   private playSample(sample: AudioBuffer, id: WeaponId, position?: Point) {
-    const out = this.channel(position, id === 'awp' ? 1 : .8);
+    this.playBuffer(sample, position, id === 'awp' ? 1 : .8);
+  }
+  private playBuffer(sample: AudioBuffer, position?: Point, volume = 1, duration?: number) {
+    const out = this.channel(position, volume);
     if (!out) return;
     const source = out.ctx.createBufferSource(); source.buffer = sample; source.connect(out.gain); source.start();
+    if (duration) {
+      const end = out.ctx.currentTime + Math.min(duration, sample.duration);
+      out.gain.gain.setValueAtTime(out.gain.gain.value, Math.max(out.ctx.currentTime, end - .025));
+      out.gain.gain.linearRampToValueAtTime(0, end); source.stop(end);
+    }
     source.onended = () => { source.disconnect(); out.dispose(); };
+    return source;
+  }
+  private effect(id: string, position?: Point, volume = 1, duration?: number) {
+    const sample = this.effectsPack === 'assets' ? this.assets.get(id) : undefined;
+    if (!sample) return false;
+    this.playBuffer(sample, position, volume, duration); return true;
   }
   async previewCustom(id: FirearmId) {
     await this.unlock();
@@ -145,11 +202,14 @@ export class Sound {
   async preview(id: WeaponId) { await this.unlock(); this.shot(id); }
   step(position?: Point, snow = false, sprinting = false, crouched = false) {
     const volume = crouched ? .065 : sprinting ? .42 : .26;
+    if (this.effect('footsteps', position, volume * 1.6, .3)) return;
     this.burst(snow ? .12 : .085, snow ? 1900 : 1000, volume, position, snow ? 85 : 105, { toneLevel: snow ? .25 : .55, filterEnd: 180 });
   }
-  reload() { this.burst(.14, 3600, .2, undefined, 260); }
+  jump(position?: Point) { if (!this.effect('jump1', position, .35)) this.burst(.1, 1200, .17, position, 160); }
+  zoom() { if (!this.effect('zoom', undefined, .45)) this.click(); }
+  reload(position?: Point) { if (!this.effect('generic_reload', position, .5)) this.burst(.14, 3600, .2, position, 260); }
   click() { this.burst(.045, 1800, .2, undefined, 400); }
   hit(head: boolean) { this.burst(.055, head ? 5500 : 2300, .24, undefined, head ? 1600 : 700); }
-  explosion(position: Point) { this.burst(.9, 700, 1.4, position, 65); }
-  flash(position: Point) { this.burst(.3, 6500, .55, position, 1900); }
+  explosion(position: Point) { if (!this.effect('hegrenade-2', position, 1.2)) this.burst(.9, 700, 1.4, position, 65); }
+  flash(position: Point) { if (!this.effect('flashbang', position, .65)) this.burst(.3, 6500, .55, position, 1900); }
 }

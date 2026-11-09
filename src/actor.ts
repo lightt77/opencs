@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { AWP_QUICK_INTERVAL, inventory, WEAPONS, type Primary, type Team, type WeaponId } from './config';
+import { AWP_QUICK_INTERVAL, grenadeLoadout, inventory, WEAPON_IDS, WEAPONS, isGrenade, type Primary, type Team, type WeaponId } from './config';
 import type { CharacterBody } from './physics';
 import type { Point } from './math';
 import { Soldier } from './models';
@@ -30,6 +30,10 @@ export class Actor {
   primary: Primary;
   ammo = {} as Record<WeaponId, Ammo>;
   previousWeapon: WeaponId = 'pistol';
+  allowedWeapons: WeaponId[] = [...WEAPON_IDS];
+  grenadeCapacity = 3;
+  refillTimers: Partial<Record<WeaponId, number>> = {};
+  grenadeCooldown = 0;
   private cooldowns: Partial<Record<WeaponId, number>> = {};
   private quickAwpCycle = false;
   awpShotAge = Infinity;
@@ -67,10 +71,33 @@ export class Actor {
   get eyeHeight() { return this.body.crouched ? 1.56 - CROUCH_DROP : 1.56; }
   eye() { return this.position.clone().add(new THREE.Vector3(0, this.eyeHeight, 0)); }
   get speed() { return Math.hypot(this.velocity.x, this.velocity.z); }
-  get weapons() { return inventory(this.primary); }
+  get weapons() { return inventory(this.primary, this.allowedWeapons); }
+
+  configureLoadout(allowed: WeaponId[], capacity: number) {
+    this.allowedWeapons = [...allowed]; this.grenadeCapacity = capacity;
+    this.weapon = this.weapons[0]; this.previousWeapon = this.weapons.find(id => id !== this.weapon) ?? this.weapon;
+  }
 
   refill() {
-    for (const [id, spec] of Object.entries(WEAPONS)) this.ammo[id as WeaponId] = { clip: spec.magazine, reserve: spec.reserve };
+    const grenades = grenadeLoadout(this.allowedWeapons, this.grenadeCapacity);
+    for (const id of WEAPON_IDS) this.ammo[id] = { clip: !this.weapons.includes(id) ? 0 : isGrenade(id) ? grenades[id] : WEAPONS[id].magazine, reserve: this.weapons.includes(id) ? WEAPONS[id].reserve : 0 };
+    this.refillTimers = {};
+  }
+
+  scheduleRefill(id: WeaponId, delay: number) {
+    if (id !== 'knife' && this.refillTimers[id] === undefined) this.refillTimers[id] = delay;
+  }
+
+  replenish(dt: number) {
+    const grenades = grenadeLoadout(this.allowedWeapons, this.grenadeCapacity);
+    for (const id of Object.keys(this.refillTimers) as WeaponId[]) {
+      this.refillTimers[id]! -= dt;
+      if (this.refillTimers[id]! > 1e-6) continue;
+      delete this.refillTimers[id];
+      if (!this.weapons.includes(id)) continue;
+      this.ammo[id] = { clip: isGrenade(id) ? grenades[id] : WEAPONS[id].magazine, reserve: WEAPONS[id].reserve };
+      if (id === this.weapon) this.reload = 0;
+    }
   }
 
   reset(point: Point, immunity: number) {
@@ -78,9 +105,9 @@ export class Actor {
     this.sprinting = false; this.step = 0; this.deathAge = 0; this.deathHead = false;
     this.model.resetPose();
     this.flash = 0; this.cooldowns = {}; this.reload = 0; this.switching = .25;
-    this.previousWeapon = 'pistol'; this.quickAwpCycle = false; this.awpShotAge = Infinity; this.jumpsUsed = 0;
+    this.previousWeapon = this.weapons.find(id => id !== this.weapons[0]) ?? this.weapons[0]; this.quickAwpCycle = false; this.awpShotAge = Infinity; this.jumpsUsed = 0;
     this.shots = 0; this.shotAge = 0; this.immunity = immunity;
-    this.weapon = this.primary; this.refill();
+    this.weapon = this.weapons[0]; this.grenadeCooldown = 0; this.refill();
     this.body.enabled(true); this.body.teleport(point); this.body.crouch(false);
     this.yaw = this.team === 'blue' ? 0 : Math.PI; this.pitch = 0;
     this.brain.path = []; this.brain.target = -1; this.brain.memory = undefined;
@@ -91,6 +118,7 @@ export class Actor {
   }
 
   sync() {
+    this.model.equip(this.weapon);
     const p = this.body.position(); this.position.set(p.x, p.y, p.z);
     this.model.root.position.copy(this.position); this.model.root.rotation.y = this.yaw;
   }
@@ -98,6 +126,7 @@ export class Actor {
   tick(dt: number) {
     for (const id of Object.keys(this.cooldowns) as WeaponId[]) this.cooldowns[id] = Math.max(0, this.cooldowns[id]! - dt);
     this.awpShotAge += dt;
+    this.grenadeCooldown = Math.max(0, this.grenadeCooldown - dt);
     this.switching = Math.max(0, this.switching - dt);
     this.immunity = Math.max(0, this.immunity - dt);
     this.flash = Math.max(0, this.flash - dt);
@@ -124,6 +153,7 @@ export class Actor {
     if (!this.alive || !this.weapons.includes(id) || this.weapon === id) return false;
     const outgoing = this.weapon;
     this.previousWeapon = outgoing; this.weapon = id;
+    this.model.equip(id);
     if (quick && outgoing === 'awp' && this.awpShotAge < WEAPONS.awp.interval) this.quickAwpCycle = true;
     if (quick && id === 'awp' && this.quickAwpCycle) {
       // Double-Q skips the long bolt recovery, but never allows instant sniper spam.

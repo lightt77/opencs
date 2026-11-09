@@ -5,7 +5,7 @@ export type MapId = 'dust' | 'snow' | 'india' | 'longshot';
 export type WeaponId = 'ak' | 'm4' | 'awp' | 'pistol' | 'knife' | 'he' | 'flash' | 'smoke';
 export type Primary = 'ak' | 'm4' | 'awp';
 export type BuiltinSoundPack = 'classic' | 'punchy' | 'suppressed';
-export type SoundPack = BuiltinSoundPack | 'custom';
+export type SoundPack = BuiltinSoundPack | 'custom' | 'assets';
 export type FirearmId = 'ak' | 'm4' | 'awp' | 'pistol';
 
 export interface Settings {
@@ -14,6 +14,9 @@ export interface Settings {
   movementSpeed: number; doubleJump: boolean; jumpGravity: number;
   soundPack: SoundPack;
   freezeTime: number; roundEndDelay: number;
+  effectsPack: 'classic' | 'assets'; radioChatter: boolean; radioVolume: number;
+  allowedWeapons: WeaponId[]; grenadeCapacity: number; refillDelay: number;
+  wallShots: 'off' | 'thin' | 'walls';
 }
 
 export const DEFAULTS: Settings = {
@@ -22,6 +25,9 @@ export const DEFAULTS: Settings = {
   movementSpeed: 1, doubleJump: false, jumpGravity: 20,
   soundPack: 'classic',
   freezeTime: 3, roundEndDelay: 2.5,
+  effectsPack: 'assets', radioChatter: true, radioVolume: 70,
+  allowedWeapons: ['ak', 'm4', 'awp', 'pistol', 'knife', 'he', 'flash', 'smoke'],
+  grenadeCapacity: 3, refillDelay: 10, wallShots: 'walls',
 };
 
 export function loadSettings(): Settings {
@@ -39,9 +45,16 @@ export function loadSettings(): Settings {
       movementSpeed: finiteRange(raw.movementSpeed, .5, 2, DEFAULTS.movementSpeed),
       doubleJump: typeof raw.doubleJump === 'boolean' ? raw.doubleJump : DEFAULTS.doubleJump,
       jumpGravity: finiteRange(raw.jumpGravity, 10, 35, DEFAULTS.jumpGravity),
-      soundPack: ['classic', 'punchy', 'suppressed', 'custom'].includes(raw.soundPack) ? raw.soundPack : DEFAULTS.soundPack,
+      soundPack: ['classic', 'punchy', 'suppressed', 'custom', 'assets'].includes(raw.soundPack) ? raw.soundPack : DEFAULTS.soundPack,
       freezeTime: finiteRange(raw.freezeTime, 0, 10, DEFAULTS.freezeTime),
       roundEndDelay: finiteRange(raw.roundEndDelay, 0, 6, DEFAULTS.roundEndDelay),
+      effectsPack: raw.effectsPack === 'classic' ? 'classic' : DEFAULTS.effectsPack,
+      radioChatter: typeof raw.radioChatter === 'boolean' ? raw.radioChatter : DEFAULTS.radioChatter,
+      radioVolume: finiteRange(raw.radioVolume, 0, 100, DEFAULTS.radioVolume),
+      allowedWeapons: sanitizeWeapons(raw.allowedWeapons),
+      grenadeCapacity: Math.round(finiteRange(raw.grenadeCapacity, 1, 3, 3)),
+      refillDelay: finiteRange(raw.refillDelay, 1, 30, 10),
+      wallShots: ['off', 'thin', 'walls'].includes(raw.wallShots) ? raw.wallShots : DEFAULTS.wallShots,
     };
   } catch { return { ...DEFAULTS }; }
 }
@@ -86,4 +99,23 @@ export function isGrenade(id: WeaponId): id is 'he' | 'flash' | 'smoke' {
   return id === 'he' || id === 'flash' || id === 'smoke';
 }
 
-export function inventory(primary: Primary): WeaponId[] { return [primary, 'pistol', 'knife', 'he', 'flash', 'smoke']; }
+export const WEAPON_IDS = Object.keys(WEAPONS) as WeaponId[];
+export const PRIMARIES: Primary[] = ['ak', 'm4', 'awp'];
+
+export function sanitizeWeapons(value: unknown): WeaponId[] {
+  const allowed = Array.isArray(value) ? WEAPON_IDS.filter(id => value.includes(id)) : [];
+  return allowed.length ? allowed : [...DEFAULTS.allowedWeapons];
+}
+
+export function inventory(primary: Primary, allowed: readonly WeaponId[] = WEAPON_IDS): WeaponId[] {
+  const selected = allowed.includes(primary) ? primary : PRIMARIES.find(id => allowed.includes(id));
+  return [...(selected ? [selected] : []), ...WEAPON_IDS.filter(id => !PRIMARIES.includes(id as Primary) && allowed.includes(id))];
+}
+
+// Three slots total; restricted grenade sets redistribute the slots, never exceed capacity.
+export function grenadeLoadout(allowed: readonly WeaponId[], capacity: number) {
+  const types = (['he', 'flash', 'smoke'] as const).filter(id => allowed.includes(id));
+  const counts = { he: 0, flash: 0, smoke: 0 };
+  for (let i = 0; types.length && i < Math.min(3, Math.max(1, Math.round(capacity))); i++) counts[types[i % types.length]]++;
+  return counts;
+}

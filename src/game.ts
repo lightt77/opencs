@@ -3,7 +3,7 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import { Actor } from './actor';
 import { Sound } from './audio';
 import { updateBot, type BotContext } from './bots';
-import { DEFAULTS, FIXED_DT, MATCH_SECONDS, ROUND_LIMIT, ROUND_SECONDS, TDM_LIMIT, WEAPONS, isGrenade, type Primary, type Settings, type Team, type WeaponId } from './config';
+import { DEFAULTS, FIXED_DT, MATCH_SECONDS, PRIMARIES, ROUND_LIMIT, ROUND_SECONDS, TDM_LIMIT, WEAPONS, isGrenade, sanitizeWeapons, type Primary, type Settings, type Team, type WeaponId } from './config';
 import { MAPS, type Arena } from './maps';
 import { angleDelta, clamp, damageAtRange, distance, groundVelocity, segmentCircle, shotSpread, type Point } from './math';
 import { block, disposeTree } from './models';
@@ -13,6 +13,8 @@ import { View } from './view';
 import { footstepStride, movementScale, scopeFov, verticalMotion } from './movement';
 import { coverHits, penetration } from './ballistics';
 import { chooseSpawn, spawnCandidates } from './spawns';
+import { grenadeThrow } from './grenades';
+import { Radio } from './radio';
 
 export interface Kill { killer: string; victim: string; team: Team; weapon: WeaponId; head: boolean; time: number }
 interface Grenade { body: RAPIER.RigidBody; mesh: THREE.Object3D; owner: Actor; type: 'he' | 'flash' | 'smoke'; fuse: number }
@@ -23,6 +25,9 @@ export type Screen = 'menu' | 'playing' | 'paused' | 'loadout' | 'finished';
 export class Game {
   view: View;
   sound = new Sound();
+  radio = new Radio((clip, priority) => this.sound.radio(clip, priority));
+  private radioCheck = 0;
+  private reportedCounts = new Set<number>();
   settings: Settings = { ...DEFAULTS };
   screen: Screen = 'menu';
   phase: 'warmup' | 'live' | 'between' = 'warmup';
@@ -76,6 +81,9 @@ export class Game {
   private ray = new THREE.Raycaster();
   private eyeY = 1.56;
   private jumpQueued = false;
+  private grenadePrime?: { type: 'he' | 'flash' | 'smoke'; start: number };
+  private grenadeRelease?: { type: 'he' | 'flash' | 'smoke'; held: number };
+  get grenadeCharge() { return this.grenadePrime ? grenadeThrow(this.time - this.grenadePrime.start).charge : undefined; }
 
   constructor(canvas: HTMLCanvasElement) {
     this.view = new View(canvas); this.view.build(this.arena);
@@ -84,21 +92,29 @@ export class Game {
 
   preview(settings: Settings) {
     this.settings = { ...settings };
-    this.sound.volume = settings.volume / 100;
-    this.sound.pack = settings.soundPack;
+    this.configureAudio(settings);
     this.view.renderer.shadowMap.enabled = settings.shadows;
     if (this.arena.id !== settings.map) {
       this.arena = MAPS[settings.map]; this.view.build(this.arena);
     }
   }
 
+  configureAudio(settings: Settings) {
+    this.sound.volume = settings.volume / 100; this.sound.pack = settings.soundPack;
+    this.sound.effectsPack = settings.effectsPack; this.sound.radioVolume = settings.radioVolume / 100;
+    this.sound.radioEnabled = settings.radioChatter;
+    this.radio.enabled = settings.radioChatter && settings.radioVolume > 0;
+    if (!this.radio.enabled) { this.sound.stopRadio(); this.radio.message = undefined; }
+  }
+
   start(settings: Settings) {
     this.cleanup(); this.settings = { ...settings };
+    this.settings.allowedWeapons = sanitizeWeapons(settings.allowedWeapons);
     this.arena = MAPS[settings.map]; this.nav = new Navigation(this.arena);
     this.physics = new Physics(this.arena); this.view.build(this.arena);
     this.spawnPools = { blue: spawnCandidates(this.nav, 'blue', false), red: spawnCandidates(this.nav, 'red', false) };
     this.view.renderer.shadowMap.enabled = settings.shadows;
-    this.sound.volume = settings.volume / 100; this.sound.pack = settings.soundPack; void this.sound.unlock();
+    this.configureAudio(settings); void this.sound.unlock();
     const names = ['YOU', 'Kestrel', 'Moss', 'Rook', 'Echo', 'Viper', 'Ash', 'Ghost', 'Flint', 'Cinder'];
     this.actors = names.map((name, id) => {
       const team = id < 5 ? 'blue' : 'red';
@@ -115,10 +131,13 @@ export class Game {
 
   private resetActors() {
     this.clearGrenades(); this.smokes = []; this.intel = {}; this.view.clearEffects();
+    this.radio.reset(); this.sound.stopRadio(); this.reportedCounts.clear(); this.radioCheck = 0;
     const assigned: Array<{ point: Point; team: Team }> = [];
     const pools = { blue: spawnCandidates(this.nav, 'blue', true), red: spawnCandidates(this.nav, 'red', true) };
     // Alternate teams so both spawn plans account for opposing positions.
     for (const actor of [0, 5, 1, 6, 2, 7, 3, 8, 4, 9].map(id => this.actors[id])) {
+      if (!this.settings.allowedWeapons.includes(actor.primary)) actor.primary = PRIMARIES.find(id => this.settings.allowedWeapons.includes(id)) ?? actor.primary;
+      actor.configureLoadout(this.settings.allowedWeapons, this.settings.grenadeCapacity);
       const enemyPoints = assigned.filter(a => a.team !== actor.team).map(a => a.point);
       const point = chooseSpawn(pools[actor.team], assigned.map(a => a.point), enemyPoints, this.nav);
       actor.reset(point, this.settings.mode === 'tdm' ? 1.6 : 0); assigned.push({ point, team: actor.team });
@@ -131,6 +150,7 @@ export class Game {
   }
 
   private cleanup() {
+    this.radio.reset(); this.sound.stopRadio();
     this.clearGrenades();
     for (const actor of this.actors) { this.view.scene.remove(actor.model.root); disposeTree(actor.model.root); }
     this.actors = []; this.physics?.dispose(); this.physics = undefined;
@@ -145,7 +165,7 @@ export class Game {
 
   pause() {
     if (this.screen !== 'playing') return;
-    this.screen = 'paused'; this.clearInput(); this.release(); this.onScreenChange?.();
+    this.screen = 'paused'; this.sound.stopRadio(); this.clearInput(); this.release(); this.onScreenChange?.();
   }
 
   resume() {
@@ -155,6 +175,7 @@ export class Game {
 
   continueRound(primary: Primary) {
     if (this.screen !== 'loadout' || this.phase !== 'between' || !['ak', 'm4', 'awp'].includes(primary)) return false;
+    if (PRIMARIES.some(id => this.settings.allowedWeapons.includes(id)) && !this.settings.allowedWeapons.includes(primary)) return false;
     this.player.primary = primary; this.settings.primary = primary;
     this.round++; this.resetActors(); this.remaining = ROUND_SECONDS;
     this.phase = 'warmup'; this.phaseTime = this.settings.freezeTime; this.screen = 'playing'; this.clearInput();
@@ -170,7 +191,8 @@ export class Game {
   }
 
   private release() { if (document.pointerLockElement) document.exitPointerLock(); }
-  private clearInput() { this.keys.clear(); this.mouseDown = this.trigger = this.jumpQueued = false; this.scoreboard = false; }
+  private clearInput() { this.keys.clear(); this.mouseDown = this.trigger = this.jumpQueued = false; this.scoreboard = false; this.cancelGrenade(); }
+  private cancelGrenade() { this.grenadePrime = this.grenadeRelease = undefined; }
 
   private input() {
     window.addEventListener('keydown', event => {
@@ -181,10 +203,10 @@ export class Game {
       if (event.repeat || !this.player?.alive) return;
       if (event.code === 'Space') this.jumpQueued = true;
       if (event.code === 'KeyR' && this.player.startReload()) { this.scoped = false; this.sound.reload(); }
-      if (event.code === 'KeyQ' && this.player.quickSwitch()) { this.scoped = false; this.sound.click(); }
+      if (event.code === 'KeyQ' && this.player.quickSwitch()) { this.cancelGrenade(); this.scoped = false; this.sound.click(); }
       if (event.code.startsWith('Digit')) {
         const id = this.player.weapons[Number(event.code.slice(5)) - 1];
-        if (id && this.player.equip(id)) { this.scoped = false; this.sound.click(); }
+        if (id && this.player.equip(id)) { this.cancelGrenade(); this.scoped = false; this.sound.click(); }
       }
       if (event.code === 'Escape') this.pause();
     });
@@ -197,10 +219,21 @@ export class Game {
     });
     window.addEventListener('mousedown', event => {
       if (this.screen !== 'playing' || document.pointerLockElement !== this.view.canvas) return;
-      if (event.button === 0) { this.mouseDown = true; this.trigger = true; }
-      if (event.button === 2 && this.player.alive && this.player.weapon === 'awp' && !this.player.reload && !this.player.sprinting) { this.scopeLevel = (this.scopeLevel + 1) % 3; this.sound.click(); }
+      if (event.button === 0) {
+        this.mouseDown = true;
+        const p = this.player;
+        if (p.alive && isGrenade(p.weapon)) {
+          if (this.phase === 'live' && p.ammo[p.weapon].clip > 0 && p.grenadeCooldown <= 0 && p.switching <= 0) this.grenadePrime = { type: p.weapon, start: this.time };
+        } else this.trigger = true;
+      }
+      if (event.button === 2 && this.player.alive && this.player.weapon === 'awp' && !this.player.reload && !this.player.sprinting) { this.scopeLevel = (this.scopeLevel + 1) % 3; this.sound.zoom(); }
     });
-    window.addEventListener('mouseup', event => { if (event.button === 0) this.mouseDown = false; });
+    window.addEventListener('mouseup', event => {
+      if (event.button !== 0) return;
+      this.mouseDown = false;
+      if (this.grenadePrime && this.screen === 'playing' && this.phase === 'live') this.grenadeRelease = { type: this.grenadePrime.type, held: this.time - this.grenadePrime.start };
+      this.grenadePrime = undefined;
+    });
     this.view.canvas.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('wheel', event => {
       if (this.screen !== 'playing' || !this.player?.alive) return;
@@ -208,7 +241,7 @@ export class Game {
       const weapons = this.player.weapons;
       let index = weapons.indexOf(this.player.weapon);
       index = (index + (event.deltaY > 0 ? 1 : -1) + weapons.length) % weapons.length;
-      if (this.player.equip(weapons[index])) { this.scoped = false; this.sound.click(); }
+      if (this.player.equip(weapons[index])) { this.cancelGrenade(); this.scoped = false; this.sound.click(); }
     }, { passive: false });
     document.addEventListener('pointerlockchange', () => {
       if (!document.pointerLockElement && this.screen === 'playing') this.pause();
@@ -260,13 +293,22 @@ export class Game {
       for (const actor of this.actors) {
         if (!actor.alive) {
           actor.respawn -= dt;
-          if (this.settings.mode === 'tdm' && actor.respawn <= 0) actor.reset(this.safeSpawn(actor.team), 1.6);
+          if (this.settings.mode === 'tdm' && actor.respawn <= 0) {
+            if (!this.settings.allowedWeapons.includes(actor.primary)) actor.primary = PRIMARIES.find(id => this.settings.allowedWeapons.includes(id)) ?? actor.primary;
+            actor.configureLoadout(this.settings.allowedWeapons, this.settings.grenadeCapacity);
+            actor.reset(this.safeSpawn(actor.team), 1.6);
+          }
           continue;
         }
+        if (this.settings.mode === 'tdm') actor.replenish(dt);
+        const wasReloading = actor.reload > 0, wasGrounded = actor.body.grounded, wasVertical = actor.velocity.y;
         if (actor.human) this.updatePlayer(dt);
         else updateBot(actor, dt, context);
+        if (!actor.human && !wasReloading && actor.reload > 0) this.sound.reload(actor.position);
+        if (!actor.human && wasGrounded && wasVertical <= 0 && actor.velocity.y > 0) this.sound.jump(actor.position);
       }
       this.updateGrenades(dt);
+      this.updateRadio();
       this.checkMatch();
     }
     this.physics!.world.step();
@@ -295,6 +337,7 @@ export class Game {
     if (p.sprinting) this.scoped = false;
     const maxSpeed = WEAPONS[p.weapon].speed * this.settings.movementSpeed * movementScale(p.body.crouched, this.scoped, p.sprinting);
     const vertical = verticalMotion(p.velocity.y, p.body.grounded, this.jumpQueued, p.jumpsUsed, this.settings.doubleJump, this.settings.jumpGravity, dt);
+    if (vertical.jumpsUsed > p.jumpsUsed) this.sound.jump();
     p.velocity.y = vertical.velocity; p.jumpsUsed = vertical.jumpsUsed; this.jumpQueued = false;
     if (p.body.grounded) {
       const v = groundVelocity(p.velocity.x, p.velocity.z, dx, dz, maxSpeed, dt);
@@ -309,27 +352,29 @@ export class Game {
     }
     p.body.move(p.velocity.x * dt, p.velocity.y * dt, p.velocity.z * dt);
     // Preserve quick clicks even when down/up both occur between fixed simulation ticks.
-    if ((this.mouseDown && WEAPONS[p.weapon].automatic) || this.trigger) {
-      if (isGrenade(p.weapon)) this.throwPlayerGrenade();
-      else {
-        const spread = shotSpread(WEAPONS[p.weapon].spread, p.speed, !p.body.grounded, p.body.crouched, p.shots, p.weapon === 'awp' && !this.scoped);
-        const yaw = p.yaw + this.recoilYaw + (Math.random() - .5) * spread * 2;
-        const pitch = p.pitch + this.recoilPitch + (Math.random() - .5) * spread * 2;
-        this.shoot(p, new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)));
-      }
+    if (this.grenadeRelease) {
+      const release = this.grenadeRelease; this.grenadeRelease = undefined;
+      if (p.weapon === release.type) this.throwPlayerGrenade(release.held);
+    }
+    if (!isGrenade(p.weapon) && ((this.mouseDown && WEAPONS[p.weapon].automatic) || this.trigger)) {
+      const spread = shotSpread(WEAPONS[p.weapon].spread, p.speed, !p.body.grounded, p.body.crouched, p.shots, p.weapon === 'awp' && !this.scoped);
+      const yaw = p.yaw + this.recoilYaw + (Math.random() - .5) * spread * 2;
+      const pitch = p.pitch + this.recoilPitch + (Math.random() - .5) * spread * 2;
+      this.shoot(p, new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)));
     }
     this.trigger = false;
   }
 
   shoot(actor: Actor, direction: THREE.Vector3) {
     const id = actor.weapon, spec = WEAPONS[id], ammo = actor.ammo[id];
-    if (!actor.alive || actor.sprinting || actor.cooldown > 0 || actor.reload > 0 || actor.switching > 0 || isGrenade(id)) return;
+    if (!actor.alive || !actor.weapons.includes(id) || actor.sprinting || actor.cooldown > 0 || actor.reload > 0 || actor.switching > 0 || isGrenade(id)) return;
     if (ammo.clip <= 0) {
       if (actor.startReload() && actor.human) { this.scoped = false; this.sound.reload(); }
       return;
     }
     actor.immunity = 0;
     if (id !== 'knife') ammo.clip--;
+    if (this.settings.mode === 'tdm') actor.scheduleRefill(id, this.settings.refillDelay);
     actor.cooldown = spec.interval; actor.shots++; actor.shotAge = 0; actor.model.flash = .06;
     if (id === 'awp') actor.awpShotAge = 0;
     if (actor.human) {
@@ -349,7 +394,7 @@ export class Game {
     const hits = this.ray.intersectObjects(targets, true);
     const hit = hits[0];
     const cover = coverHits(origin, direction, this.arena.boxes, spec.range).filter(h => h.entry < (hit?.distance ?? spec.range));
-    const result = penetration(id, cover);
+    const result = penetration(id, cover, this.settings.wallShots);
     // The floor is always solid, never a penetrable wall.
     const floor = direction.y < -1e-8 ? -origin.y / direction.y : Infinity;
     const hitDistance = Math.min(hit?.distance ?? spec.range, result.stop ?? Infinity, floor);
@@ -367,6 +412,7 @@ export class Game {
     const victim = targetId === undefined ? undefined : this.actors[targetId];
     const head = hit.object.userData.head === true && id !== 'knife';
     this.view.impact(hit.point, !!victim);
+    if (victim && victim.team === actor.team && victim !== actor && victim.immunity <= 0 && !victim.human && actor.team === this.player.team) this.radio.say('friendlyFire', victim.name, this.time);
     if (victim && victim.team !== actor.team && victim.immunity <= 0) {
       const amount = damageAtRange(spec.damage, hit.distance, head, spec.head, spec.falloff) * result.multiplier;
       this.damage(victim, amount, actor, id, head);
@@ -387,8 +433,17 @@ export class Game {
       this.lastDamage = this.time;
       this.damageDirection = angleDelta(victim.yaw, Math.atan2(victim.position.x - attacker.position.x, victim.position.z - attacker.position.z));
     }
+    if (head && victim.team !== attacker.team && attacker.team === this.player.team) {
+      const teammate = this.actors.find(a => !a.human && a.alive && a !== attacker && a.team === attacker.team && this.botSees(a, victim));
+      if (teammate) this.radio.say('headshot', teammate.name, this.time);
+    }
     if (victim.health > 0) return;
     victim.alive = false; victim.deaths++; victim.respawn = 3;
+    this.sound.death(victim.human ? undefined : victim.position);
+    if (victim.team !== this.player.team) {
+      const witness = this.actors.find(a => !a.human && a.team === this.player.team && a.alive && (a === attacker || this.botSees(a, victim)));
+      if (witness) this.radio.observedDeaths.add(victim.id);
+    }
     victim.sprinting = false; victim.deathAge = 0; victim.deathHead = head;
     victim.deathOrigin.copy(victim.position);
     victim.deathDirection.copy(victim.position).sub(attacker.position).setY(0);
@@ -400,6 +455,7 @@ export class Game {
     this.kills.unshift({ killer: attacker.name, victim: victim.name, team: attacker.team, weapon, head, time: this.time });
     this.kills = this.kills.slice(0, 5);
     if (victim.human) {
+      this.cancelGrenade();
       this.deathCamera = { killer: attacker.id, time: this.time, origin: this.view.camera.position.clone(), rotation: this.view.camera.quaternion.clone(), fov: this.view.camera.fov };
       this.scoped = false; this.mouseDown = this.trigger = false;
     }
@@ -416,23 +472,29 @@ export class Game {
     actor.model.root.position.copy(actor.position);
   }
 
-  private throwPlayerGrenade() {
+  private throwPlayerGrenade(held = 0) {
     const player = this.player, type = player.weapon;
-    if (!isGrenade(type) || !player.ammo[type].clip || player.cooldown > 0 || player.switching > 0) return;
-    const direction = new THREE.Vector3(-Math.sin(player.yaw) * Math.cos(player.pitch), Math.sin(player.pitch) + .18, -Math.cos(player.yaw) * Math.cos(player.pitch));
-    this.launchGrenade(player, type, direction.normalize().multiplyScalar(15));
-    this.kick = .8; player.equip(player.primary);
+    if (!player.alive || !isGrenade(type) || !player.weapons.includes(type) || !player.ammo[type].clip || player.grenadeCooldown > 0 || player.switching > 0) return;
+    const spec = grenadeThrow(held), yaw = player.yaw + (Math.random() - .5) * spec.spread * 2;
+    const pitch = player.pitch + .18 + (Math.random() - .5) * spec.spread * 2;
+    const direction = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+    this.launchGrenade(player, type, direction.multiplyScalar(spec.speed));
+    this.kick = .8;
+    if (!player.ammo[type].clip) player.equip(player.weapons.find(id => !isGrenade(id)) ?? player.weapons.find(id => player.ammo[id].clip > 0) ?? type);
   }
 
   private botGrenade(actor: Actor, type: 'he' | 'flash' | 'smoke', target: Point) {
-    if (!actor.ammo[type].clip || actor.cooldown > 0 || actor.reload > 0) return;
+    if (!actor.alive || !actor.weapons.includes(type) || !actor.ammo[type].clip || actor.grenadeCooldown > 0 || actor.cooldown > 0 || actor.reload > 0 || actor.switching > 0) return;
     const delta = new THREE.Vector3(target.x - actor.position.x, 0, target.z - actor.position.z);
     const length = delta.length(); delta.normalize().multiplyScalar(Math.min(16, length * .7)); delta.y = clamp(length * .32, 3, 8);
     this.launchGrenade(actor, type, delta); actor.cooldown = .6;
   }
 
   private launchGrenade(owner: Actor, type: 'he' | 'flash' | 'smoke', velocity: THREE.Vector3) {
+    if (!owner.alive || !owner.weapons.includes(type) || !owner.ammo[type].clip || owner.grenadeCooldown > 0) return;
     owner.ammo[type].clip--; owner.immunity = 0;
+    owner.grenadeCooldown = 1;
+    if (this.settings.mode === 'tdm') owner.scheduleRefill(type, this.settings.refillDelay);
     // Start at the eye, rather than ahead of a wall where a throw could clip through geometry.
     const origin = owner.eye();
     const mesh = block(new THREE.Group(), [.15, .2, .15], [0, 0, 0], new THREE.MeshStandardMaterial({ color: type === 'he' ? 0x697348 : type === 'smoke' ? 0xa5b1ae : 0xd4d0b5 }));
@@ -510,6 +572,7 @@ export class Game {
       if (this.scores.blue >= TDM_LIMIT || this.scores.red >= TDM_LIMIT || this.remaining <= 0) {
         this.pendingFinish = this.scores.blue === this.scores.red ? 'draw' : this.scores.blue > this.scores.red ? 'blue' : 'red';
         this.phase = 'between'; this.phaseTime = this.settings.roundEndDelay;
+        this.victoryRadio(this.pendingFinish);
         this.announce('MATCH COMPLETE', this.phaseTime + .1); this.clearInput();
       }
     } else {
@@ -522,6 +585,7 @@ export class Game {
         winner = bh === rh ? 'draw' : bh > rh ? 'blue' : 'red';
       }
       if (winner !== 'draw') this.scores[winner]++;
+      this.victoryRadio(winner);
       if (this.scores.blue >= ROUND_LIMIT || this.scores.red >= ROUND_LIMIT || this.round >= 15) {
         this.pendingFinish = this.scores.blue === this.scores.red ? 'draw' : this.scores.blue > this.scores.red ? 'blue' : 'red';
       }
@@ -536,6 +600,39 @@ export class Game {
   }
 
   private announce(text: string, duration: number) { this.announcement = text; this.announcementTime = duration; }
+
+  private botSees(bot: Actor, target: Actor) {
+    const d = distance(bot.position, target.position);
+    const sight = bot.weapon === 'awp' ? (this.arena.sniperSight ?? 52) : 52;
+    const angle = Math.atan2(bot.position.x - target.position.x, bot.position.z - target.position.z);
+    return bot.flash < .3 && d < sight && (d < 5 || Math.abs(angleDelta(bot.yaw, angle)) < 1.25) && this.visible(bot.eye(), target.eye());
+  }
+
+  private updateRadio() {
+    if (!this.radio.enabled || this.time < this.radioCheck) return;
+    this.radioCheck = this.time + .5;
+    const allies = this.actors.filter(a => a.alive && a.team === this.player.team);
+    for (const bot of allies.filter(a => !a.human)) {
+      const enemies = this.actors.filter(a => a.alive && a.team !== bot.team && this.botSees(bot, a));
+      if (!enemies.length) continue;
+      if (this.settings.mode === 'elimination') {
+        const remaining = 5 - this.radio.observedDeaths.size;
+        if ((remaining === 1 || remaining === 2) && !this.reportedCounts.has(remaining)) {
+          if (this.radio.say(remaining === 1 ? 'oneLeft' : 'twoLeft', bot.name, this.time)) this.reportedCounts.add(remaining);
+        }
+      }
+      const nearby = allies.filter(a => distance(bot.position, a.position) < 22).length;
+      if (enemies.length > nearby) this.radio.say('overwhelmed', bot.name, this.time);
+    }
+  }
+
+  private victoryRadio(winner: Team | 'draw') {
+    if (winner !== this.player.team) return;
+    const survivors = this.actors.filter(a => a.alive && a.team === winner);
+    const speaker = survivors.find(a => !a.human) ?? survivors[0] ?? this.player;
+    const big = this.settings.mode === 'tdm' ? this.scores[winner] - this.scores[winner === 'blue' ? 'red' : 'blue'] >= 10 : survivors.length >= 3;
+    this.radio.say(big ? 'bigVictory' : 'closeVictory', speaker.name, this.time, true);
+  }
 
   private camera(dt: number) {
     const camera = this.view.camera;
@@ -602,5 +699,6 @@ export class Game {
     this.view.equip(p.weapon);
     const reload = p.reload > 0 ? 1 - p.reload / WEAPONS[p.weapon].reload : 0;
     this.view.animateWeapon(this.time, p.speed, this.kick, reload, p.switching / .25, this.shotFlash > 0, p.weapon === 'knife', p.body.crouched);
+    if (this.grenadeCharge !== undefined) { this.view.weapon.position.y += .06; this.view.weapon.rotation.x -= .25 + this.grenadeCharge * .2; }
   }
 }

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Actor } from './actor';
-import { BOT_SKILL, WEAPONS, type Difficulty, type Team } from './config';
+import { BOT_SKILL, WEAPONS, isGrenade, type Difficulty, type Team } from './config';
 import { angleDelta, clamp, distance, type Point } from './math';
 import type { Navigation } from './navigation';
 import { movementScale } from './movement';
@@ -50,9 +50,14 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
 
   const target = game.actors.find(a => a.id === brain.target && a.alive);
   const targetVisible = target && actor.flash < .3 && game.visible(actor.eye(), target.eye());
+  const armed = actor.weapons.find(id => !isGrenade(id) && (id === 'knife' || actor.ammo[id].clip > 0 || actor.ammo[id].reserve > 0));
+  if (armed && isGrenade(actor.weapon)) actor.equip(armed);
   const ammo = actor.ammo[actor.weapon];
   if (ammo.clip === 0 || (!targetVisible && ammo.clip < WEAPONS[actor.weapon].magazine * .55)) {
-    if (!actor.startReload() && ammo.clip === 0 && ammo.reserve === 0) actor.equip(actor.weapon === 'pistol' ? 'knife' : 'pistol');
+    if (!actor.startReload() && ammo.clip === 0 && ammo.reserve === 0) {
+      const fallback = actor.weapons.find(id => id !== actor.weapon && (id === 'knife' || actor.ammo[id].clip > 0 || actor.ammo[id].reserve > 0));
+      if (fallback) actor.equip(fallback);
+    }
   }
 
   let moveX = 0, moveZ = 0;
@@ -100,6 +105,11 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
     }
     if (actor.weapon === 'knife') {
       moveX = d > 1.5 ? delta.x / d : 0; moveZ = d > 1.5 ? delta.z / d : 0;
+    } else if (isGrenade(actor.weapon)) {
+      if (d > 15) { moveX = delta.x / d; moveZ = delta.z / d; }
+      else if (d < 7) { moveX = -delta.x / d; moveZ = -delta.z / d; }
+      const grenade = actor.weapons.find(id => isGrenade(id) && actor.ammo[id].clip > 0);
+      if (grenade && isGrenade(grenade) && d < 30 && game.time - brain.acquired > skill.reaction) game.throwGrenade(actor, grenade, target.position);
     } else if (d < 5) { moveX += Math.sin(actor.yaw); moveZ += Math.cos(actor.yaw); }
     if (brain.decision > .12 && d > 11 && d < 29 && game.time - brain.acquired > .8 && Math.random() < .025) {
       if (actor.ammo.he.clip) game.throwGrenade(actor, 'he', target.position);
