@@ -2,6 +2,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import type { Arena } from './maps';
 import type { Point } from './math';
 import { FIXED_DT } from './config';
+import { grenadePhysics } from './grenades';
 
 export class Physics {
   world = new RAPIER.World({ x: 0, y: -20, z: 0 });
@@ -15,9 +16,10 @@ export class Physics {
 
   character(point: Point) { return new CharacterBody(this.world, point); }
 
-  grenade(position: { x: number; y: number; z: number }, velocity: { x: number; y: number; z: number }) {
-    const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(position.x, position.y, position.z).setCcdEnabled(true));
-    this.world.createCollider(RAPIER.ColliderDesc.ball(.11).setRestitution(.42).setFriction(.7).setDensity(4).setCollisionGroups(0x00040001), body);
+  grenade(position: { x: number; y: number; z: number }, velocity: { x: number; y: number; z: number }, weight: 'light' | 'normal' | 'heavy' = 'normal', bounce = true) {
+    const spec = grenadePhysics(weight, bounce);
+    const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(position.x, position.y, position.z).setCcdEnabled(true).setGravityScale(spec.gravity).setLinearDamping(spec.damping));
+    this.world.createCollider(RAPIER.ColliderDesc.ball(.11).setRestitution(spec.restitution).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Max).setFriction(spec.friction).setMass(spec.mass).setCollisionGroups(0x00040001), body);
     body.setLinvel(velocity, true);
     body.setAngvel({ x: 5, y: 2, z: 1 }, true);
     return body;

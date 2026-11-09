@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite';
+import { attachRooms } from './server/rooms';
 
 export default defineConfig({
+  plugins: [{ name: 'opencs-lan', configureServer(server) { if (server.httpServer) attachRooms(server.httpServer as import('node:http').Server); } }],
   build: {
     rollupOptions: {
       output: {

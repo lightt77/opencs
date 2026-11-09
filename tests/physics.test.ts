@@ -4,6 +4,20 @@ import { MAPS } from '../src/maps';
 
 beforeAll(async () => { await initPhysics(); });
 describe('Rapier character controller', () => {
+  it('applies grenade weight and bounce to actual simulated trajectories', () => {
+    const physics = new Physics({ ...MAPS.india, boxes: [] });
+    const light = physics.grenade({ x: -5, y: 5, z: 0 }, { x: 0, y: 0, z: 0 }, 'light', true);
+    const heavy = physics.grenade({ x: 5, y: 5, z: 0 }, { x: 0, y: 0, z: 0 }, 'heavy', false);
+    for (let i = 0; i < 20; i++) physics.world.step();
+    expect(light.translation().y).toBeGreaterThan(heavy.translation().y);
+    let lightBounce = 0, heavyBounce = 0;
+    for (let i = 0; i < 100; i++) {
+      physics.world.step();
+      lightBounce = Math.max(lightBounce, light.linvel().y); heavyBounce = Math.max(heavyBounce, heavy.linvel().y);
+    }
+    expect(lightBounce).toBeGreaterThan(2); expect(heavyBounce).toBeLessThan(.5);
+    physics.dispose();
+  });
   it('lands on the floor and stops at solid walls', () => {
     const physics = new Physics(MAPS.india);
     const actor = physics.character({ x: 0, z: 28 });

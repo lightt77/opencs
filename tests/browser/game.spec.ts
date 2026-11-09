@@ -649,7 +649,7 @@ test('grenades prime while held, charge to a cap, and launch only on release', a
   await page.evaluate(() => { const p = window.__OPENCS__.player; p.equip('flash'); p.switching = 0; p.grenadeCooldown = 0; });
   await page.mouse.click(720, 450); await expect.poll(() => page.evaluate(() => window.__throws.length)).toBe(2);
   const speeds = await page.evaluate(() => window.__throws);
-  expect(speeds[0]).toBeCloseTo(22); expect(speeds[1]).toBeLessThan(9);
+  expect(speeds[0]).toBeCloseTo(34); expect(speeds[1]).toBeLessThan(14);
 });
 
 test('switching weapons or pausing cancels a held grenade without spending ammunition', async ({ page }) => {

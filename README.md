@@ -1,6 +1,6 @@
 # OPENCS
 
-A single-player, CS-inspired browser FPS built with TypeScript, Three.js, and Rapier. Original low-poly characters and map geometry, procedural sound packs, and optional user-supplied audio recordings. No backend, accounts, or external AI services.
+A solo and local-Wi-Fi multiplayer, CS-inspired browser FPS built with TypeScript, Three.js, and Rapier. Original low-poly characters and map geometry, procedural sound packs, and optional user-supplied audio recordings. Solo needs no server backend; LAN rooms use a small local WebSocket server. No accounts or external AI services.
 
 ## Run
 
@@ -18,9 +18,32 @@ npx playwright install chromium # One-time browser test setup
 npm run test:browser # Real Chromium integration tests, including pointer lock
 ```
 
+## Local Wi-Fi multiplayer
+
+On **one host computer**, connected to the same LAN/Wi-Fi as the other players:
+
+```sh
+npm run lan          # Development: serves the game and LAN rooms; prints Network URLs
+# Or, for play without Vite development reloads:
+npm run build
+npm start            # Serves dist/ and LAN rooms on port 5173; prints Wi-Fi URLs
+```
+
+1. Open the host's **Network URL** (for example `http://192.168.1.23:5173`) on every computer. `localhost` works only on the host itself. The room key does not discover computers: everyone must open the same server address first.
+2. Host: configure the map/mode/weapons and **Settings → Operators Per Team** (1–10). Enable **Fill LAN Teams With Bots** for mixed human/bot play, or disable it for humans only. With fill on, bots occupy all unused slots at match start; with fill off, only joined humans play. Solo always fills both teams with bots.
+3. Choose **Local Wi-Fi → Host / Join Room**, enter a callsign and preferred team, then **Create Room**. Share the six-character key with the other players.
+4. Guests enter their callsign, preferred team, and key, then **Join Room**. Team buttons allow changes in the lobby. Human counts may differ by at most one: joins are assigned to the smaller team if necessary; switches that would unbalance/full a team are rejected. Lobby departures also rebalance remaining humans.
+5. Host selects **Start LAN Match**. Both teams must have at least one operator. Elimination intermissions wait for the host; everyone can choose their own allowed next-round primary.
+
+The creator's browser is authoritative for movement, hits, inventory, grenades, bots, respawns and scores. Guests send controls—not positions, damage or scores—through the local server. Simulation runs at 60 Hz with 20 Hz state snapshots and smoothed guest rendering. Mouse/sound/display preferences remain local; room gameplay rules are locked at creation. **ESC does not pause a LAN match:** your operator remains vulnerable. Solo pause still freezes the game.
+
+Keep the host browser **open, awake and in the foreground**; background timer throttling can slow the match. This first LAN version has no client prediction/lag compensation, internet matchmaking, host migration, reconnection, or mid-match joining. If a guest leaves, bot-filled matches replace their operator with a bot; human-only matches remove the slot until the room ends (an entirely departed team forfeits). If the host leaves/disconnects, the room closes. Create a new room for another match or different rules.
+
+Allow Node/the app through the host firewall for **private networks**. Wi-Fi guest/client isolation can block device-to-device traffic; use a trusted network without isolation. `PORT=5175 npm start` changes the production port. Do **not** forward the port or use a public tunnel. The room socket rejects public-source IPs and cross-origin browser connections; this is a trusted-LAN prototype, not an internet-hardened dedicated server. Room traffic is unencrypted local HTTP/WebSocket.
+
 ## Scope
 
-- Five-on-five: you and four allied bots versus five enemy bots.
+- Configurable 1–10 operators per team (default five-on-five): solo bots, LAN players only, or LAN players plus bots.
 - Team deathmatch and round-based elimination, without an economy or bomb objective.
 - Dust II: Dust2-inspired routing with Long A/pit, short/catwalk, mid double doors, covered B tunnels, A/B landmarks, and defender-side rotations. This is a compact, single-level layout adaptation using original geometry—not an exact scale/elevation replica. A/B are landmarks, not bomb objectives. Snow and India remain compact original arenas. Longshot Range is a 320 × 420 m open sniper arena with 370 m spawn sightlines and scattered flank cover.
 - AK, M4, AWP, pistol, knife, HE, flash, and smoke.
@@ -29,7 +52,7 @@ npm run test:browser # Real Chromium integration tests, including pointer lock
 - Locally saved preferences; entirely local matches.
 - Movement-speed and jump-gravity sliders, optional double jump, three built-in gunshot styles, and locally imported custom gunshots.
 - Floating damage numbers for your hits, including grenades; gold headshot numbers. Numbers show actual health removed, capped at the victim's remaining health.
-- Elimination intermissions show all ten players' cumulative kills/deaths and both teams' win counts. Choose an allowed primary and explicitly start the next round; scores persist.
+- Elimination intermissions show all operators' cumulative kills/deaths and both teams' win counts. Choose an allowed primary and explicitly start the next round (host in LAN); scores persist.
 - Configurable weapon restrictions for both teams, up to three carried grenades total, charged throws, and automatic deathmatch ammunition resupply.
 - Configurable wall penetration, two-stage AWP optics (no unscoped AWP crosshair), positional footsteps, event-driven team radio, and animated deaths with a killer-camera pan.
 
@@ -53,7 +76,7 @@ Weapon slots compress when restrictions remove equipment: use the HUD's numbered
 
 ### Movement and sound preferences
 
-Open **Settings** from the lobby or pause menu. Changes apply immediately and persist locally.
+Open **Settings** from the lobby or pause menu. Preferences persist locally. Solo gameplay changes apply immediately or at the indicated next deployment/round; LAN gameplay settings are locked to the room, while local mouse/audio/display options remain editable.
 
 - **Movement speed:** 0.5–2.0×, applied to the player and both bot teams.
 - **Double jump:** off by default. When enabled, press Space again in the air for one extra jump; landing replenishes it. Walking off an edge allows one air jump, not two.
@@ -74,7 +97,7 @@ Open **Settings** from the lobby or pause menu. Changes apply immediately and pe
 
 **Wall shots:** Settings → Match Weapon Rules → Bullet Wall Penetration defaults to **All Walls**, allowing firearm shots through ordinary walls/buildings with reduced damage. Actual 3D thickness, material, weapon, angle, and additional layers reduce damage, down to a 2.5% minimum multiplier. AWP penetrates best; USP loses more damage. **Thin Cover Only** retains the original cumulative thickness budget/two-layer cap; **Off** blocks every wall hit. Floors always stop bullets; knife never penetrates. No multi-player piercing. Bots do not gain vision through walls or deliberately target unseen opponents.
 
-**Deaths:** operators fall onto their backs; lethal headshots add a short airborne, backward impulse (~0.85 m / 2.8 ft when unobstructed). Wall clearance limits knockback. Your view falls for ~0.8 s, then pans toward and zooms onto the killer over 1.5 s, before ordinary teammate spectating / deathmatch respawn. This is a procedural animation, not a full physics ragdoll. Shortening the round-end buffer can cut the cinematic short. Bots climb reachable crates up to 1.35 m, not arbitrary buildings or roofs.
+**Deaths:** operators fall onto their backs; lethal headshots add a short airborne, backward impulse (~0.85 m / 2.8 ft when unobstructed). Lethal HE blasts launch bodies upward (~1.6 m) and outward from the explosion, not the thrower; horizontal travel is up to ~5.85 m. Wall clearance limits knockback. Your view falls for ~0.8 s, then pans toward and zooms onto the killer over 1.5 s, before ordinary teammate spectating / deathmatch respawn. This is a procedural animation, not a full physics ragdoll. Shortening the round-end buffer can cut the cinematic short. Bots climb reachable crates up to 1.35 m, not arbitrary buildings or roofs.
 
 **Longshot Range:** choose an AWP for sightlines exceeding 370 m. Spawns are now randomized and prefer concealment, so the opening is not always a face-to-face sniper duel. Bots use sniper rifles, respect cover, and can perceive visible targets across the map. The AWP has a 700 m hitscan range, gentler damage falloff, and a stronger 12° first-stage scope on Longshot; rifle and pistol ranges are unchanged. The larger arena has appropriately extended rendering/fog distances and a coarser navigation grid to keep pathfinding lightweight.
 
@@ -149,19 +172,21 @@ Fonts are bundled locally (Barlow and Barlow Condensed, SIL Open Font License vi
 | `src/ballistics.ts`, `src/spawns.ts` | 3D cover thickness / penetration and randomized safe spawning |
 | `src/movement.ts`, `src/animation.ts` | Stance speeds, optics, jump rules, and two-bone leg animation |
 | `src/audio.ts`, `src/audio-assets.ts`, `src/radio.ts` | Procedural/recorded positional audio, scenario manifest, and radio scheduling |
-| `src/grenades.ts` | Capped throw power and accuracy from charge duration |
+| `src/grenades.ts` | Configurable charged throws, weight/bounce tuning, throw pose and blast flight |
+| `src/lan.ts`, `src/lan-protocol.ts` | LAN client, control validation, team balance and roster planning |
+| `server/rooms.ts`, `server/index.ts` | Local room relay, room keys, access checks and production static server |
 | `src/custom-audio.ts` | Custom-file validation and browser-only sample persistence |
 
 Unit tests cover movement, spread, damage, map connectivity, line-of-sight, and collision. Browser tests exercise actual mouse capture, movement, shooting, reloads, utility, bot firefights, round progression, and menus. They use full headless Chromium (`channel: 'chromium'`) because the separate headless-shell build does not support pointer lock on macOS. Development builds expose `window.__OPENCS__` for integration tests; production builds do not.
 
-This is an initial playable prototype, not a recreation of Counter-Strike. Movement, balance, tactical behavior, and audio need real playtesting. Multiplayer, bomb defusal, buying, full ragdoll physics, arbitrary-surface climbing, and advanced movement exploits are out of scope.
+This is an initial playable prototype, not a recreation of Counter-Strike. Movement, balance, tactical behavior, audio and real-device Wi-Fi latency need playtesting. Internet multiplayer, bomb defusal, buying, full ragdoll physics, arbitrary-surface climbing, and advanced movement exploits are out of scope.
 
 ### Match rules
 
-Deathmatch ends at 40 team kills or six minutes, with three-second respawns and brief spawn protection that ends when firing. Elimination is first to five round wins, with a 100-second round clock. On timeout, surviving operator count then total remaining health decide the round; exact ties are draws. A 15-round cap prevents endless drawn matches. Friendly fire is disabled, but your own HE grenade can hurt you. HE and flash effects respect solid cover; smoke and flash affect bot perception as well as the player. Pause freezes the entire simulation.
+Deathmatch ends at 40 team kills or six minutes, with three-second respawns and brief spawn protection that ends when firing. Elimination is first to five round wins, with a 100-second round clock. On timeout, surviving operator count then total remaining health decide the round; exact ties are draws. A 15-round cap prevents endless drawn matches. Friendly fire is disabled, but your own HE grenade can hurt you. HE and flash effects respect solid cover; smoke and flash affect bot perception as well as the player. Pause freezes solo matches only.
 
 **Weapon restrictions:** open **Weapon Rules** in Mission Setup, **Match Weapon Rules** in Settings, or **Change Next Round Weapon Rules** during elimination intermission. Toggle individual weapons or use All / AWP Only / AWP + AK / USP Only / Knife Only / Grenades Only presets. Both teams receive one selected allowed primary (if any), plus only allowed sidearm/knife/utility; restricted weapons cannot be equipped or restored on respawn. At least one weapon must remain selected. Loadout changes take effect on deployment, respawn, or the next round reset—not halfway through a life.
 
-**Grenade capacity:** 1–3 total carried grenades, default 3, distributed in HE → flash → smoke order across allowed types. All types enabled gives one each; HE only gives three HE; HE + smoke gives two HE and one smoke. A throw has a shared one-second grenade cooldown. Holding LMB prepares the grenade without spending ammo or starting its fuse; charging up to 1.5 s increases launch speed from 8 to 22 m/s and reduces throw spread to zero. Releasing launches it and starts its fuse. Switching weapons, pausing, dying, or changing rounds safely cancels preparation. Empty utility switches back to an available allowed weapon when possible.
+**Grenade capacity:** 1–3 total carried grenades, default 3, distributed in HE → flash → smoke order across allowed types. All types enabled gives one each; HE only gives three HE; HE + smoke gives two HE and one smoke. A throw has a shared one-second grenade cooldown. Holding LMB prepares the grenade without spending ammo or starting its fuse; charging up to 1.5 s increases launch speed from ~36% to 100% of the configured cap and reduces spread to zero. **Max Throw Speed** is 12–65 m/s, default **34 m/s** (formerly 22). Throws inherit 45% of horizontal/jumping momentum and show a wind-up/follow-through with a spinning grenade model. **Grenade Weight** has Light/Normal/Heavy drop-and-drag presets; **Bouncy Grenades** toggles lively rebounds versus deadened impacts. All teams use these settings. Releasing launches it and starts its fuse. Switching weapons, opening the pause menu, dying, or changing rounds safely cancels preparation. Empty utility switches back to an available allowed weapon when possible.
 
 **Infinite deathmatch supplies:** the first shot/throw starts a per-weapon refill timer (default 10 s, configurable 1–30 s). Further use does not postpone it. At expiry, that gun's magazine/reserves or grenade type's assigned count refills; health and firing/throw cooldowns do not reset. A HUD countdown shows the currently equipped weapon's refill. Both bot teams receive the same supplies. Elimination replenishes only on new rounds/lives; grenade-only rounds can run out, and flash/smoke-only restrictions cannot cause kills.

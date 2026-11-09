@@ -7,6 +7,8 @@ import { CUSTOM_WEAPONS } from './custom-audio';
 import { Vector3 } from 'three';
 import { BOT_PROFILES, profileLabel, sanitizeProfiles } from './bot-profiles';
 
+const escapeHTML = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
 const cross = '<svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M16 2v8m0 12v8M2 16h8m12 0h8" stroke="currentColor" stroke-width="3"/><circle cx="16" cy="16" r="3" fill="currentColor"/></svg>';
 const arrow = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.6"/></svg>';
 const timeString = (seconds: number) => `${Math.floor(Math.max(0, seconds) / 60).toString().padStart(2, '0')}:${Math.floor(Math.max(0, seconds) % 60).toString().padStart(2, '0')}`;
@@ -39,6 +41,7 @@ export class UI {
   private hudElements: Record<string, HTMLElement> = {};
   private popupElements = new Map<number, HTMLElement>();
   private popupPoint = new Vector3();
+  private lanName = '';
 
   constructor(readonly game: Game) {
     this.root = document.querySelector('#app')!;
@@ -51,6 +54,10 @@ export class UI {
     game.onScreenChange = () => this.screen();
     game.onFrame = () => this.frame();
     game.preview(this.settings); this.screen();
+    game.lan.onChange = () => {
+      if (game.screen === 'menu' && this.overlay.querySelector('.lan-dialog')) this.lanDialog();
+      if (game.screen === 'menu' && game.lan.status && !this.overlay.querySelector('.lan-dialog')) this.lanDialog();
+    };
     window.addEventListener('keydown', event => {
       if (this.overlay.hidden) return;
       if (event.code === 'Escape' && this.overlay.querySelector('.close-button')) {
@@ -79,7 +86,7 @@ export class UI {
       </header>
       <main class="lobby">
         <section class="briefing" aria-labelledby="hero-title">
-          <div class="eyebrow"><span class="tiny-cross">+</span> SINGLE PLAYER. SQUAD MENTALITY.</div>
+          <div class="eyebrow"><span class="tiny-cross">+</span> SOLO OR LOCAL WI-FI. SQUAD MENTALITY.</div>
           <h1 id="hero-title">SMALL MAPS.<br><span>BIG STAKES.</span></h1>
           <p class="intro">Old-school gunplay. A fresh field of play.<br><span>Find your angle. Trust your squad. Make every shot count.</span></p>
           <div class="section-label"><span>01 — SELECT YOUR BATTLEFIELD</span><span class="quiet">${Object.keys(MAPS).length} AVAILABLE</span></div>
@@ -89,7 +96,7 @@ export class UI {
               <span class="map-caption"><strong>${map.name}</strong><small>${map.subtitle.split(' / ')[1]}</small></span>
             </button>`).join('')}
           </div>
-          <div class="field-stats"><span><b>05 <i>vs</i> 05</b> SQUAD COMBAT</span><span><b>08</b> WEAPONS & UTILITY</span><span><b>100%</b> IN YOUR BROWSER</span></div>
+          <div class="field-stats"><span><b>${s.teamSize} <i>vs</i> ${s.teamSize}</b> SQUAD COMBAT</span><span><b>08</b> WEAPONS & UTILITY</span><span><b>100%</b> IN YOUR BROWSER</span></div>
         </section>
         <aside class="setup-card" aria-labelledby="setup-title">
           <div class="setup-heading"><div><span class="eyebrow">YOUR NEXT MATCH</span><h2 id="setup-title">MISSION SETUP</h2></div><span class="card-cross">${cross}</span></div>
@@ -104,8 +111,9 @@ export class UI {
              <div class="control-label"><span>PRIMARY WEAPON</span><span>${s.map === 'longshot' ? 'AWP RECOMMENDED' : 'ALLOWED LOADOUT'}</span></div>
              <div class="segments weapons" role="group" aria-label="Primary weapon">${PRIMARIES.map(id => `<button data-primary="${id}" ${s.allowedWeapons.includes(id) ? '' : 'disabled'} class="${s.primary === id && s.allowedWeapons.includes(id) ? 'selected' : ''}" aria-pressed="${s.primary === id && s.allowedWeapons.includes(id)}"><span class="weapon-glyph">${id === 'awp' ? '━╋━' : '━┳┓'}</span>${WEAPONS[id].name}</button>`).join('')}</div>
              <button class="secondary-button rules-button" id="weapon-rules">WEAPON RULES · ${s.allowedWeapons.map(id => WEAPONS[id].short).join(' + ')}</button>
-            <div class="squad-note"><span class="status-dot"></span> YOU + 4 ALLIES <span>VS</span> 5 ENEMY BOTS</div>
+            <div class="squad-note"><span class="status-dot"></span> YOU + ${s.teamSize - 1} ALLIES <span>VS</span> ${s.teamSize} ENEMY BOTS</div>
             <button class="deploy-button" id="deploy"><span>DEPLOY TO ${s.map.toUpperCase()}</span>${arrow}</button>
+            <button class="secondary-button rules-button" id="lan-play">LOCAL WI-FI · HOST / JOIN ROOM</button>
             <p class="deploy-note">NO LOBBY. NO LOGIN. JUST PLAY.</p>
           </div>
         </aside>
@@ -124,11 +132,50 @@ export class UI {
         this.save(); this.game.preview(this.settings); this.game.sound.click(); this.renderMenu();
       }));
     }
-    this.menu.querySelector('#deploy')!.addEventListener('click', () => { this.save(); this.game.start(this.settings); });
+    this.menu.querySelector('#deploy')!.addEventListener('click', () => { if (this.game.lan.room) this.game.lan.leave(); this.save(); this.game.start(this.settings); });
+    this.menu.querySelector('#lan-play')!.addEventListener('click', () => this.lanDialog());
     this.menu.querySelector('#open-settings')!.addEventListener('click', () => this.openSettings());
     this.menu.querySelector('#open-controls')!.addEventListener('click', () => this.controls());
     this.menu.querySelector('#weapon-rules')!.addEventListener('click', () => { this.openSettings(); this.overlay.querySelector('#match-rules')!.scrollIntoView(); });
     this.menu.querySelector('#bot-profiles')!.addEventListener('click', () => { this.openSettings(); this.overlay.querySelector('#bot-personalities')!.scrollIntoView(); });
+  }
+
+  private lanDialog() {
+    const lan = this.game.lan, room = lan.room;
+    this.overlay.hidden = false;
+    this.overlay.innerHTML = `<section class="dialog lan-dialog" role="dialog" aria-modal="true" aria-labelledby="lan-title">
+      <div class="dialog-title"><div><span class="eyebrow">SAME WI-FI. SAME BATTLEFIELD.</span><h2 id="lan-title">${room ? 'ROOM ' + room.key : 'LOCAL WI-FI'}</h2></div><button class="close-button" aria-label="Close LAN room">×</button></div>
+      ${room ? `<p>${['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) ? 'Share the Network URL printed by npm run lan (localhost cannot be shared)' : `Share <strong>${escapeHTML(location.origin)}</strong>`} and room key <strong id="room-key">${room.key}</strong>. Other computers must use this host's Wi-Fi IP address, not localhost.</p>
+        <p>${room.settings.teamSize} slots per team · ${room.settings.botFill ? 'empty slots filled by bots' : 'human players only'} · ${MAPS[room.settings.map].name} · ${room.settings.mode.toUpperCase()}</p>
+        <div class="lan-roster">${(['blue', 'red'] as const).map(team => `<section><h3 class="${team}-text">${team.toUpperCase()}</h3>${room.members.filter(m => m.team === team).map(m => `<p>${escapeHTML(m.name)}${m.id === lan.id ? ' / YOU' : ''}${m.id === room.host ? ' / HOST' : ''}</p>`).join('')}<button class="secondary-button" data-team="${team}">JOIN ${team.toUpperCase()}</button></section>`).join('')}</div>
+        <p class="settings-hint">Human teams may differ by at most one. A choice that would unbalance teams is blocked. Team size and match rules are locked when the room is created.</p>
+        ${lan.host ? '<button class="deploy-button" id="lan-start">START LAN MATCH</button>' : '<p>Waiting for the host to start…</p>'}
+        <button class="text-button exit-button" id="lan-leave">LEAVE ROOM</button>` : `
+        <p>On the host computer run <code>npm run lan</code> (development), or <code>npm run build</code> then <code>npm start</code>. Open its network URL on every computer.</p>
+        <label class="slider-label" for="lan-name">PLAYER NAME</label><input class="pack-select" id="lan-name" maxlength="18" placeholder="Your callsign" value="${escapeHTML(this.lanName)}" />
+        <label class="slider-label" for="lan-team">PREFERRED TEAM</label><select id="lan-team" class="pack-select"><option value="blue">BLUE</option><option value="red">RED</option></select>
+        <p class="settings-hint">Host uses Mission Setup / Settings: ${this.settings.teamSize} slots per team, ${this.settings.botFill ? 'bot fill on' : 'humans only'}. Configure these before creating a room.</p>
+        <button class="deploy-button" id="lan-create">CREATE ROOM</button>
+        <label class="slider-label" for="lan-key">SHARED ROOM KEY</label><input class="pack-select" id="lan-key" maxlength="6" placeholder="ABC123" autocomplete="off" />
+        <button class="secondary-button rules-button" id="lan-join">JOIN ROOM</button>`}
+      <p id="lan-status" class="settings-hint" role="status">${escapeHTML(lan.status)}</p>
+      <p class="dialog-footnote">LAN only; no matchmaking, port forwarding or accounts. The host browser runs the simulation: keep it open and in the foreground. ESC releases your mouse but does not pause a shared match. Players join before the match starts.</p>
+    </section>`;
+    this.overlay.querySelector('.close-button')!.addEventListener('click', () => this.closeDialog());
+    const request = async (type: 'create' | 'join') => {
+      this.lanName = this.overlay.querySelector<HTMLInputElement>('#lan-name')!.value;
+      const team = this.overlay.querySelector<HTMLSelectElement>('#lan-team')!.value;
+      const key = this.overlay.querySelector<HTMLInputElement>('#lan-key')!.value;
+      const buttons = this.overlay.querySelectorAll<HTMLButtonElement>('#lan-create, #lan-join'); buttons.forEach(b => b.disabled = true);
+      try { await lan.connect(); lan.send({ type, name: this.lanName, team, key, primary: this.settings.primary, settings: this.settings }); }
+      catch (error) { lan.status = error instanceof Error ? error.message : 'LAN connection failed.'; this.lanDialog(); }
+      finally { buttons.forEach(b => b.disabled = false); }
+    };
+    this.overlay.querySelector('#lan-create')?.addEventListener('click', () => { void request('create'); });
+    this.overlay.querySelector('#lan-join')?.addEventListener('click', () => { void request('join'); });
+    this.overlay.querySelectorAll<HTMLButtonElement>('[data-team]').forEach(b => b.addEventListener('click', () => lan.send({ type: 'team', team: b.dataset.team })));
+    this.overlay.querySelector('#lan-start')?.addEventListener('click', () => lan.send({ type: 'start' }));
+    this.overlay.querySelector('#lan-leave')?.addEventListener('click', () => { lan.leave(); this.lanDialog(); });
   }
 
   private buildHUD() {
@@ -172,7 +219,7 @@ export class UI {
   }
 
   private pauseHTML() {
-    this.overlay.innerHTML = `<section class="dialog pause-dialog"><span class="eyebrow">TAKE A BREATHER</span><h2>MATCH PAUSED</h2><p>The battlefield can wait.<br>Your match is paused while the mouse is released.</p>
+    this.overlay.innerHTML = `<section class="dialog pause-dialog"><span class="eyebrow">TAKE A BREATHER</span><h2>${this.game.network ? 'MOUSE RELEASED' : 'MATCH PAUSED'}</h2><p>${this.game.network ? 'The LAN match is still live. Your operator can be attacked while this menu is open.' : 'The battlefield can wait.<br>Your match is paused while the mouse is released.'}</p>
       <button class="deploy-button" id="resume"><span>BACK IN THE FIGHT</span>${arrow}</button>
       <div class="pause-actions"><button class="secondary-button" id="pause-settings">SETTINGS</button><button class="secondary-button" id="pause-controls">CONTROLS</button></div>
       <button class="text-button exit-button" id="leave">LEAVE MATCH</button>
@@ -194,11 +241,12 @@ export class UI {
       <div class="segments weapons" role="group" aria-label="Next round primary">${PRIMARIES.filter(id => g.settings.allowedWeapons.includes(id)).map(id => `<button data-round-primary="${id}" class="${id === selected ? 'selected' : ''}" aria-pressed="${id === selected}">${WEAPONS[id].name}</button>`).join('')}</div>
       <p class="loadout-note">Allowed weapons: ${g.settings.allowedWeapons.map(id => WEAPONS[id].short).join(' + ')}. Allowed ammunition and up to ${g.settings.grenadeCapacity} total grenades replenish at round start. Scores persist.</p>
       <button class="secondary-button rules-button" id="round-rules">CHANGE NEXT ROUND WEAPON RULES</button>
-      <button class="deploy-button" id="continue-round"><span>START ROUND ${g.round + 1}</span>${arrow}</button>
+      <button class="deploy-button" id="continue-round" ${g.network && !g.lan.host ? 'disabled' : ''}><span>${g.network && !g.lan.host ? 'WAITING FOR HOST' : `START ROUND ${g.round + 1}`}</span>${arrow}</button>
       <button class="text-button exit-button" id="loadout-leave">LEAVE MATCH</button>
     </section>`;
     this.overlay.querySelectorAll<HTMLButtonElement>('[data-round-primary]').forEach(button => button.addEventListener('click', () => {
       selected = button.dataset.roundPrimary as Settings['primary'];
+      if (g.network && !g.lan.host) { this.settings.primary = selected; this.save(); g.lan.send({ type: 'primary', primary: selected }); }
       this.overlay.querySelectorAll<HTMLButtonElement>('[data-round-primary]').forEach(b => {
         const active = b.dataset.roundPrimary === selected; b.classList.toggle('selected', active); b.setAttribute('aria-pressed', String(active));
       });
@@ -220,9 +268,12 @@ export class UI {
 
   private openSettings() {
     this.overlay.hidden = false;
-    const s = this.settings;
+    const s = this.game.network ? { ...this.game.settings, primary: this.game.player.primary } : this.settings;
     this.overlay.innerHTML = `<section class="dialog settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div class="dialog-title"><div><span class="eyebrow">MAKE IT YOURS</span><h2 id="settings-title">SETTINGS</h2></div><button class="close-button" aria-label="Close settings">×</button></div>
       <div class="settings-grid"><section aria-labelledby="movement-title"><h3 id="movement-title">INPUT & MOVEMENT</h3>
+      <h3>TEAM SIZES & LAN BOTS</h3>
+      <label class="slider-label" for="teamSize">OPERATORS PER TEAM <output>${s.teamSize}</output></label><input id="teamSize" type="range" min="1" max="10" step="1" value="${s.teamSize}" />
+      <label class="checkbox-label"><span>FILL LAN TEAMS WITH BOTS <small>Off: human-only room. On: bots fill remaining team slots at match start. Solo always uses bots.</small></span><input id="botFill" type="checkbox" ${s.botFill ? 'checked' : ''} /></label>
       <label class="slider-label" for="sensitivity">MOUSE SENSITIVITY <output>${s.sensitivity.toFixed(2)}</output></label><input id="sensitivity" type="range" min="0.25" max="2.5" step="0.05" value="${s.sensitivity}" />
       <label class="slider-label" for="movementSpeed">MOVEMENT SPEED <output>${s.movementSpeed.toFixed(1)}×</output></label><input id="movementSpeed" type="range" min="0.5" max="2" step="0.1" value="${s.movementSpeed}" />
       <label class="slider-label" for="jumpGravity">JUMP GRAVITY <output>${s.jumpGravity} m/s²</output></label><input id="jumpGravity" type="range" min="10" max="35" step="1" value="${s.jumpGravity}" />
@@ -252,10 +303,15 @@ export class UI {
       <p class="settings-hint" id="rules-hint">One allowed primary per operator, plus allowed sidearm/knife/utility. At least one weapon must remain enabled. Changes apply on deployment or next round; grenades-only elimination has limited ammunition.</p>
       <label class="slider-label" for="grenadeCapacity">TOTAL CARRIED GRENADES <output>${s.grenadeCapacity}</output></label><input id="grenadeCapacity" type="range" min="1" max="3" step="1" value="${s.grenadeCapacity}" />
       <label class="slider-label" for="refillDelay">DEATHMATCH REFILL DELAY <output>${s.refillDelay}s</output></label><input id="refillDelay" type="range" min="1" max="30" step="1" value="${s.refillDelay}" />
+      <h3>GRENADE THROW & PHYSICS</h3>
+      <label class="slider-label" for="grenadePower">MAX THROW SPEED <output>${s.grenadePower} m/s</output></label><input id="grenadePower" type="range" min="12" max="65" step="1" value="${s.grenadePower}" />
+      <label class="slider-label" for="grenadeWeight">GRENADE WEIGHT</label><select id="grenadeWeight" class="pack-select">${['light', 'normal', 'heavy'].map(w => `<option value="${w}" ${s.grenadeWeight === w ? 'selected' : ''}>${w.toUpperCase()}</option>`).join('')}</select>
+      <label class="checkbox-label"><span>BOUNCY GRENADES <small>On: lively rebounds. Off: deadened impacts. Weight changes drop and drag, not charge time.</small></span><input id="grenadeBounce" type="checkbox" ${s.grenadeBounce ? 'checked' : ''} /></label>
+      <p class="settings-hint">Hold LMB up to 1.5s, release to throw. Default cap 34 m/s; up to 65 m/s. Throws inherit some running momentum. Both teams use the same physics.</p>
       <label class="slider-label" for="wallShots">BULLET WALL PENETRATION</label><select id="wallShots" class="pack-select"><option value="walls" ${s.wallShots === 'walls' ? 'selected' : ''}>ALL WALLS · REDUCED DAMAGE</option><option value="thin" ${s.wallShots === 'thin' ? 'selected' : ''}>THIN COVER ONLY</option><option value="off" ${s.wallShots === 'off' ? 'selected' : ''}>OFF</option></select><p class="settings-hint">Floors always block bullets. Bots still need line of sight.</p>
       </section>
       <section id="bot-personalities"><h3>BOT PERSONALITIES · BOTH TEAMS</h3>
-      <p class="settings-hint">Shuffle enabled profiles across the nine bots each round. No repeats until the pool is used; deathmatch respawns keep their profile. Skill controls aim/reaction, Co-op controls sharing/regrouping, and Bravery controls stealth/assault. Difficulty scales all profiles. Changes apply next match or round.</p>
+      <p class="settings-hint">Shuffle enabled profiles across active bots each round. No repeats until the pool is used; deathmatch respawns keep their profile. Skill controls aim/reaction, Co-op controls sharing/regrouping, and Bravery controls stealth/assault. Difficulty scales all profiles. Changes apply next match or round.</p>
       <div class="profile-table" role="group" aria-label="Bot personality profiles"><div class="profile-head"><span>USE / PROFILE</span><span>SKILL</span><span>CO-OP</span><span>BRAVERY</span></div>
       ${s.botProfiles.map(p => `<div class="profile-row" data-profile="${p.id}"><label><input type="checkbox" data-profile-enabled="${p.id}" aria-label="Enable ${p.name} profile" ${p.enabled ? 'checked' : ''} />${p.name}</label>${(['skill', 'coop', 'bravery'] as const).map(key => `<select data-profile-trait="${key}" aria-label="${p.name} ${key === 'coop' ? 'Co-op' : key}">${(key === 'skill' ? ['low', 'mid', 'high'] : ['low', 'high']).map(value => `<option value="${value}" ${p[key] === value ? 'selected' : ''}>${value.toUpperCase()}</option>`).join('')}</select>`).join('')}</div>`).join('')}</div>
       <p class="settings-hint" id="profile-hint" role="status">${s.botProfiles.filter(p => p.enabled).length} profiles enabled. Keep at least one selected.</p>
@@ -263,21 +319,21 @@ export class UI {
       </section>
       <button class="secondary-button" id="reset-settings">RESTORE DEFAULTS</button><p class="dialog-footnote">Saved on this device. Match options stay unchanged.</p>
     </section>`;
-    for (const key of ['sensitivity', 'volume', 'fov', 'movementSpeed', 'jumpGravity', 'freezeTime', 'roundEndDelay', 'radioVolume', 'grenadeCapacity', 'refillDelay'] as const) {
+    for (const key of ['sensitivity', 'volume', 'fov', 'movementSpeed', 'jumpGravity', 'freezeTime', 'roundEndDelay', 'radioVolume', 'grenadeCapacity', 'refillDelay', 'teamSize', 'grenadePower'] as const) {
       const input = this.overlay.querySelector<HTMLInputElement>(`#${key}`)!;
       input.addEventListener('input', () => {
         this.settings[key] = Number(input.value);
         const value = this.settings[key];
-        input.previousElementSibling!.querySelector('output')!.textContent = key === 'sensitivity' ? value.toFixed(2) : key === 'movementSpeed' ? `${value.toFixed(1)}×` : `${value}${key === 'fov' ? '°' : key === 'jumpGravity' ? ' m/s²' : key === 'freezeTime' || key === 'roundEndDelay' || key === 'refillDelay' ? 's' : key === 'grenadeCapacity' ? '' : '%'}`;
+        input.previousElementSibling!.querySelector('output')!.textContent = key === 'sensitivity' ? value.toFixed(2) : key === 'movementSpeed' ? `${value.toFixed(1)}×` : `${value}${key === 'fov' ? '°' : key === 'jumpGravity' ? ' m/s²' : key === 'grenadePower' ? ' m/s' : key === 'freezeTime' || key === 'roundEndDelay' || key === 'refillDelay' ? 's' : key === 'grenadeCapacity' || key === 'teamSize' ? '' : '%'}`;
         this.applySettings();
       });
     }
-    for (const key of ['shadows', 'doubleJump', 'radioChatter'] as const) {
+    for (const key of ['shadows', 'doubleJump', 'radioChatter', 'botFill', 'grenadeBounce'] as const) {
       this.overlay.querySelector(`#${key}`)!.addEventListener('change', event => {
         this.settings[key] = (event.target as HTMLInputElement).checked; this.applySettings();
       });
     }
-    for (const key of ['effectsPack', 'wallShots'] as const) this.overlay.querySelector(`#${key}`)!.addEventListener('change', event => {
+    for (const key of ['effectsPack', 'wallShots', 'grenadeWeight'] as const) this.overlay.querySelector(`#${key}`)!.addEventListener('change', event => {
       Object.assign(this.settings, { [key]: (event.target as HTMLSelectElement).value }); this.applySettings();
     });
     const updateRules = (weapons: WeaponId[]) => {
@@ -325,6 +381,12 @@ export class UI {
     });
     this.overlay.querySelector('.close-button')!.addEventListener('click', () => this.closeDialog());
     (this.overlay.querySelector('.close-button') as HTMLButtonElement).focus();
+    if (this.game.network) {
+      const local = new Set(['sensitivity', 'volume', 'fov', 'shadows', 'soundPack', 'effectsPack', 'radioChatter', 'radioVolume']);
+      this.overlay.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input, select').forEach(el => { if (!local.has(el.id)) el.disabled = true; });
+      this.overlay.querySelectorAll<HTMLButtonElement>('[data-preset], #reset-profiles, #reset-settings').forEach(el => el.disabled = true);
+      this.overlay.querySelector('.dialog-footnote')!.textContent = 'LAN match rules are locked for every player. Sound, mouse and display preferences remain local. Create a new room to change rules.';
+    }
   }
 
   private customAudioDialog() {
@@ -381,7 +443,10 @@ export class UI {
   }
 
   private applySettings() {
-    this.save(); Object.assign(this.game.settings, this.settings);
+    this.save();
+    if (this.game.network) {
+      for (const key of ['sensitivity', 'volume', 'fov', 'shadows', 'soundPack', 'effectsPack', 'radioChatter', 'radioVolume'] as const) Object.assign(this.game.settings, { [key]: this.settings[key] });
+    } else Object.assign(this.game.settings, this.settings);
     this.game.configureAudio(this.settings);
     this.game.view.renderer.shadowMap.enabled = this.settings.shadows;
   }
@@ -405,9 +470,9 @@ export class UI {
       <div class="result-score"><span class="blue-text">${g.scores.blue}<small>BLUE TEAM</small></span><i>:</i><span class="red-text">${g.scores.red}<small>RED TEAM</small></span></div>
       <div class="personal-stats"><div><b>${g.player.kills}</b><span>KILLS</span></div><div><b>${g.player.deaths}</b><span>DEATHS</span></div><div><b>${(g.player.kills / Math.max(1, g.player.deaths)).toFixed(1)}</b><span>K / D</span></div></div>
       <div class="round-board" aria-label="Player scores">${this.scoreboardHTML(true)}</div>
-      <button class="deploy-button" id="rematch"><span>RUN IT BACK</span>${arrow}</button><button class="text-button exit-button" id="back-menu">BACK TO MISSION SETUP</button>
+      <button class="deploy-button" id="rematch"><span>${g.network ? 'NEW LAN ROOM' : 'RUN IT BACK'}</span>${arrow}</button><button class="text-button exit-button" id="back-menu">BACK TO MISSION SETUP</button>
     </section>`;
-    this.overlay.querySelector('#rematch')!.addEventListener('click', () => this.game.start(this.settings));
+    this.overlay.querySelector('#rematch')!.addEventListener('click', () => { if (g.network) { g.toMenu(); this.lanDialog(); } else g.start(this.settings); });
     this.overlay.querySelector('#back-menu')!.addEventListener('click', () => this.game.toMenu());
   }
 
@@ -476,7 +541,7 @@ export class UI {
 
   private scoreboardHTML(intermission = false) {
     const g = this.game;
-    const teams = (['blue', 'red'] as const).map(team => `<section class="board-team"><div class="scoreboard-team ${team}-text"><span>${team.toUpperCase()} TEAM</span><span>${g.scores[team]}</span></div><div class="scoreboard-row board-labels"><span>OPERATOR</span><span>K</span><span>D</span><span>STATUS</span></div>${g.actors.filter(a => a.team === team).sort((a, b) => b.kills - a.kills).map(a => `<div class="scoreboard-row ${a.human ? 'is-you' : ''}"><span class="operator-name" ${a.profile ? `title="${profileLabel(a.profile)}" aria-label="${a.name}: ${profileLabel(a.profile)}"` : ''}>${a.name}${a.human ? ' <small>/ YOU</small>' : a.profile ? ` <small class="profile-badge">${a.profile.name}</small>` : ''}</span><span>${a.kills}</span><span>${a.deaths}</span><span class="${a.alive ? 'alive' : 'dead'}">${a.alive ? 'ACTIVE' : 'DOWN'}</span></div>`).join('')}</section>`).join('');
+    const teams = (['blue', 'red'] as const).map(team => `<section class="board-team"><div class="scoreboard-team ${team}-text"><span>${team.toUpperCase()} TEAM</span><span>${g.scores[team]}</span></div><div class="scoreboard-row board-labels"><span>OPERATOR</span><span>K</span><span>D</span><span>STATUS</span></div>${g.actors.filter(a => a.team === team).sort((a, b) => b.kills - a.kills).map(a => `<div class="scoreboard-row ${a === g.player ? 'is-you' : ''}"><span class="operator-name" ${a.profile ? `title="${profileLabel(a.profile)}" aria-label="${a.name}: ${profileLabel(a.profile)}"` : ''}>${a.name}${a === g.player ? ' <small>/ YOU</small>' : a.human ? ' <small>/ PLAYER</small>' : a.profile ? ` <small class="profile-badge">${a.profile.name}</small>` : ''}</span><span>${a.kills}</span><span>${a.deaths}</span><span class="${a.alive ? 'alive' : 'dead'}">${a.alive ? 'ACTIVE' : 'DOWN'}</span></div>`).join('')}</section>`).join('');
     return `<div class="scoreboard-heading"><span>${g.arena.name} / ${g.settings.mode === 'tdm' ? 'TEAM DEATHMATCH' : 'ELIMINATION'}</span><span>LOCAL MATCH</span></div><h2>SQUAD STATUS</h2><div class="board-teams">${teams}</div>${intermission ? '' : '<p>HOLD TAB TO VIEW · RELEASE TO CLOSE</p>'}`;
   }
 
@@ -515,10 +580,10 @@ export class UI {
       ctx.fillRect(px(b.x - b.w / 2), pz(b.z - b.d / 2), b.w * scale, b.d * scale);
     }
     for (const actor of g.actors) {
-      if (actor.team !== 'blue' || !actor.alive) continue;
-      ctx.fillStyle = actor.human ? '#f1c27f' : '#8cc3d2';
-      ctx.beginPath(); ctx.arc(px(actor.position.x), pz(actor.position.z), actor.human ? 3.5 : 2.5, 0, Math.PI * 2); ctx.fill();
-      if (actor.human) {
+      if (actor.team !== g.player.team || !actor.alive) continue;
+      ctx.fillStyle = actor === g.player ? '#f1c27f' : '#8cc3d2';
+      ctx.beginPath(); ctx.arc(px(actor.position.x), pz(actor.position.z), actor === g.player ? 3.5 : 2.5, 0, Math.PI * 2); ctx.fill();
+      if (actor === g.player) {
         ctx.strokeStyle = '#f1c27f'; ctx.lineWidth = 1.2;
         ctx.beginPath(); ctx.moveTo(px(actor.position.x), pz(actor.position.z)); ctx.lineTo(px(actor.position.x - Math.sin(actor.yaw) * 3), pz(actor.position.z - Math.cos(actor.yaw) * 3)); ctx.stroke();
       }

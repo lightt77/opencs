@@ -20,6 +20,8 @@ export interface Settings {
   allowedWeapons: WeaponId[]; grenadeCapacity: number; refillDelay: number;
   wallShots: 'off' | 'thin' | 'walls';
   botProfiles: BotProfile[];
+  teamSize: number; botFill: boolean;
+  grenadePower: number; grenadeWeight: 'light' | 'normal' | 'heavy'; grenadeBounce: boolean;
 }
 
 export const DEFAULTS: Settings = {
@@ -32,11 +34,18 @@ export const DEFAULTS: Settings = {
   allowedWeapons: ['ak', 'm4', 'awp', 'pistol', 'knife', 'he', 'flash', 'smoke'],
   grenadeCapacity: 3, refillDelay: 10, wallShots: 'walls',
   botProfiles: sanitizeProfiles(undefined),
+  teamSize: 5, botFill: true,
+  grenadePower: 34, grenadeWeight: 'normal', grenadeBounce: true,
 };
 
 export function loadSettings(): Settings {
+  try { return sanitizeSettings(JSON.parse(localStorage.getItem('opencs.settings') ?? '{}')); }
+  catch { return sanitizeSettings({}); }
+}
+
+export function sanitizeSettings(value: unknown): Settings {
   try {
-    const raw = JSON.parse(localStorage.getItem('opencs.settings') ?? '{}');
+    const raw = value as Settings;
     return {
       map: ['dust', 'snow', 'india', 'longshot'].includes(raw.map) ? raw.map : DEFAULTS.map,
       mode: ['tdm', 'elimination'].includes(raw.mode) ? raw.mode : DEFAULTS.mode,
@@ -60,6 +69,11 @@ export function loadSettings(): Settings {
       refillDelay: finiteRange(raw.refillDelay, 1, 30, 10),
       wallShots: ['off', 'thin', 'walls'].includes(raw.wallShots) ? raw.wallShots : DEFAULTS.wallShots,
       botProfiles: sanitizeProfiles(raw.botProfiles),
+      teamSize: Math.round(finiteRange(raw.teamSize, 1, 10, DEFAULTS.teamSize)),
+      botFill: typeof raw.botFill === 'boolean' ? raw.botFill : DEFAULTS.botFill,
+      grenadePower: finiteRange(raw.grenadePower, 12, 65, DEFAULTS.grenadePower),
+      grenadeWeight: ['light', 'normal', 'heavy'].includes(raw.grenadeWeight) ? raw.grenadeWeight : DEFAULTS.grenadeWeight,
+      grenadeBounce: typeof raw.grenadeBounce === 'boolean' ? raw.grenadeBounce : DEFAULTS.grenadeBounce,
     };
   } catch { return { ...DEFAULTS, allowedWeapons: [...DEFAULTS.allowedWeapons], botProfiles: sanitizeProfiles(undefined) }; }
 }

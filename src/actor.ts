@@ -38,6 +38,7 @@ export class Actor {
   private cooldowns: Partial<Record<WeaponId, number>> = {};
   private quickAwpCycle = false;
   awpShotAge = Infinity;
+  throwAge = Infinity;
   jumpsUsed = 0;
   get cooldown() { return this.cooldowns[this.weapon] ?? 0; }
   set cooldown(value: number) { this.cooldowns[this.weapon] = value; }
@@ -49,13 +50,14 @@ export class Actor {
   sprinting = false;
   deathAge = 0;
   deathHead = false;
+  deathBlast = false;
   deathOrigin = new THREE.Vector3();
   deathDirection = new THREE.Vector3();
   brain: Brain;
   profile?: BotProfile;
   model: Soldier;
 
-  constructor(readonly id: number, readonly name: string, readonly team: Team, readonly human: boolean, primary: Primary, readonly body: CharacterBody) {
+  constructor(readonly id: number, readonly name: string, readonly team: Team, public human: boolean, primary: Primary, readonly body: CharacterBody) {
     this.primary = primary; this.weapon = primary;
     this.model = new Soldier(team, name, primary);
     this.model.label.userData.enabled = team === 'blue';
@@ -105,6 +107,8 @@ export class Actor {
   reset(point: Point, immunity: number) {
     this.alive = true; this.health = 100; this.velocity.set(0, 0, 0);
     this.sprinting = false; this.step = 0; this.deathAge = 0; this.deathHead = false;
+    this.deathBlast = false;
+    this.throwAge = Infinity;
     this.model.resetPose();
     this.flash = 0; this.cooldowns = {}; this.reload = 0; this.switching = .25;
     this.previousWeapon = this.weapons.find(id => id !== this.weapons[0]) ?? this.weapons[0]; this.quickAwpCycle = false; this.awpShotAge = Infinity; this.jumpsUsed = 0;
@@ -128,6 +132,7 @@ export class Actor {
   tick(dt: number) {
     for (const id of Object.keys(this.cooldowns) as WeaponId[]) this.cooldowns[id] = Math.max(0, this.cooldowns[id]! - dt);
     this.awpShotAge += dt;
+    this.throwAge += dt;
     this.grenadeCooldown = Math.max(0, this.grenadeCooldown - dt);
     this.switching = Math.max(0, this.switching - dt);
     this.immunity = Math.max(0, this.immunity - dt);

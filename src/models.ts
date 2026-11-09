@@ -4,6 +4,7 @@ import { footTarget, solveLeg } from './animation';
 import { clamp, type Point } from './math';
 import { CROUCH_DROP } from './movement';
 import { animateBolt, awpAction } from './weapon-animation';
+import { grenadePose } from './grenades';
 
 const material = (color: number, roughness = .85) => new THREE.MeshStandardMaterial({ color, roughness });
 const steel = material(0x303a3c, .4);
@@ -159,7 +160,7 @@ export class Soldier {
     this.body.add(this.gun);
   }
 
-  animate(dt: number, motion: Point, alive: boolean, reloading: boolean, grounded: boolean, crouched: boolean, deathAge = 0, deathHead = false, awpShotAge = Infinity) {
+  animate(dt: number, motion: Point, alive: boolean, reloading: boolean, grounded: boolean, crouched: boolean, deathAge = 0, deathHead = false, awpShotAge = Infinity, throwAge = Infinity) {
     this.flash = Math.max(0, this.flash - dt);
     this.gun.getObjectByName('muzzle')!.visible = this.flash > 0 && alive;
     this.death = alive ? 0 : clamp(deathAge / (deathHead ? .65 : .8), 0, 1);
@@ -195,6 +196,7 @@ export class Soldier {
       animateBolt(this.gun, awpShotAge);
     }
     this.rightArm.rotation.x = reloading ? .1 : -.35;
+    if (alive) this.rightArm.rotation.x -= grenadePose(throwAge).pitch * 1.5;
     this.leftArm.rotation.x = -.35 + Math.sin(this.gaitPhase * Math.PI * 2) * .04 * this.gaitAmount;
   }
 }

@@ -61,7 +61,7 @@ describe('deathmatch resupply', () => {
 describe('charged grenade throws', () => {
   it('increases speed and precision up to a finite 1.5-second cap', () => {
     const tap = grenadeThrow(0), middle = grenadeThrow(.75), full = grenadeThrow(1.5);
-    expect(tap.speed).toBe(8); expect(middle.speed).toBe(15); expect(full.speed).toBe(22);
+    expect(tap.speed).toBeCloseTo(34 * 8 / 22); expect(middle.speed).toBeCloseTo(34 * 15 / 22); expect(full.speed).toBe(34);
     expect(tap.spread).toBeGreaterThan(middle.spread); expect(full.spread).toBe(0);
     expect(grenadeThrow(99)).toEqual(full); expect(grenadeThrow(-1)).toEqual(tap);
   });
