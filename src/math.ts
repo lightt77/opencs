@@ -1,5 +1,5 @@
-export interface Point { x: number; z: number }
-export interface Box { x: number; y: number; z: number; w: number; h: number; d: number; color?: number; kind?: 'wall' | 'crate' | 'building' | 'beam' | 'door' }
+export interface Point { x: number; z: number; y?: number }
+export interface Box { x: number; y: number; z: number; w: number; h: number; d: number; rotY?: number; color?: number; kind?: 'wall' | 'crate' | 'building' | 'beam' | 'door' | 'floor' }
 export const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 export const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -7,6 +7,11 @@ export const angleDelta = (a: number, b: number) => Math.atan2(Math.sin(b - a), 
 
 // Slab intersection in the horizontal plane. Used by AI perception and blast occlusion.
 export function segmentBox(a: Point, b: Point, box: Box, padding = 0): boolean {
+  if (box.rotY) {
+    const c = Math.cos(box.rotY), s = Math.sin(box.rotY);
+    const local = (p: Point) => ({ x: (p.x - box.x) * c - (p.z - box.z) * s, z: (p.x - box.x) * s + (p.z - box.z) * c });
+    return segmentBox(local(a), local(b), { ...box, x: 0, z: 0, rotY: 0 }, padding);
+  }
   let near = 0, far = 1;
   for (const [origin, direction, center, half] of [
     [a.x, b.x - a.x, box.x, box.w / 2 + padding],

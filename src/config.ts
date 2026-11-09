@@ -3,7 +3,8 @@ import { sanitizeProfiles, type BotProfile } from './bot-profiles';
 export type Team = 'blue' | 'red';
 export type Mode = 'tdm' | 'elimination';
 export type Difficulty = 'easy' | 'medium' | 'hard';
-export type MapId = 'dust' | 'snow' | 'india' | 'longshot';
+export const MAP_IDS = ['dust', 'snow', 'india', 'longshot', 'dust2_blockout', 'canopy', 'dockyard', 'alpine', 'redrock', 'quarter', 'foundry', 'pinewatch'] as const;
+export type MapId = typeof MAP_IDS[number];
 export type WeaponId = 'ak' | 'm4' | 'awp' | 'pistol' | 'knife' | 'he' | 'flash' | 'smoke';
 export type Primary = 'ak' | 'm4' | 'awp';
 export type BuiltinSoundPack = 'classic' | 'punchy' | 'suppressed';
@@ -16,6 +17,7 @@ export interface Settings {
   movementSpeed: number; doubleJump: boolean; jumpGravity: number;
   soundPack: SoundPack;
   freezeTime: number; roundEndDelay: number;
+  matchDuration: number; roundDuration: number; autoRotate: boolean; rotationDelay: number;
   effectsPack: 'classic' | 'assets'; radioChatter: boolean; radioVolume: number;
   allowedWeapons: WeaponId[]; grenadeCapacity: number; refillDelay: number;
   wallShots: 'off' | 'thin' | 'walls';
@@ -30,6 +32,7 @@ export const DEFAULTS: Settings = {
   movementSpeed: 1, doubleJump: false, jumpGravity: 20,
   soundPack: 'classic',
   freezeTime: 3, roundEndDelay: 2.5,
+  matchDuration: 360, roundDuration: 100, autoRotate: false, rotationDelay: 8,
   effectsPack: 'assets', radioChatter: true, radioVolume: 70,
   allowedWeapons: ['ak', 'm4', 'awp', 'pistol', 'knife', 'he', 'flash', 'smoke'],
   grenadeCapacity: 3, refillDelay: 10, wallShots: 'walls',
@@ -47,7 +50,7 @@ export function sanitizeSettings(value: unknown): Settings {
   try {
     const raw = value as Settings;
     return {
-      map: ['dust', 'snow', 'india', 'longshot'].includes(raw.map) ? raw.map : DEFAULTS.map,
+      map: MAP_IDS.includes(raw.map) ? raw.map : DEFAULTS.map,
       mode: ['tdm', 'elimination'].includes(raw.mode) ? raw.mode : DEFAULTS.mode,
       difficulty: ['easy', 'medium', 'hard'].includes(raw.difficulty) ? raw.difficulty : DEFAULTS.difficulty,
       primary: ['ak', 'm4', 'awp'].includes(raw.primary) ? raw.primary : DEFAULTS.primary,
@@ -61,6 +64,10 @@ export function sanitizeSettings(value: unknown): Settings {
       soundPack: ['classic', 'punchy', 'suppressed', 'custom', 'assets'].includes(raw.soundPack) ? raw.soundPack : DEFAULTS.soundPack,
       freezeTime: finiteRange(raw.freezeTime, 0, 10, DEFAULTS.freezeTime),
       roundEndDelay: finiteRange(raw.roundEndDelay, 0, 6, DEFAULTS.roundEndDelay),
+      matchDuration: Math.round(finiteRange(raw.matchDuration, 30, 3600, DEFAULTS.matchDuration)),
+      roundDuration: Math.round(finiteRange(raw.roundDuration, 15, 600, DEFAULTS.roundDuration)),
+      autoRotate: typeof raw.autoRotate === 'boolean' ? raw.autoRotate : DEFAULTS.autoRotate,
+      rotationDelay: finiteRange(raw.rotationDelay, 3, 30, DEFAULTS.rotationDelay),
       effectsPack: raw.effectsPack === 'classic' ? 'classic' : DEFAULTS.effectsPack,
       radioChatter: typeof raw.radioChatter === 'boolean' ? raw.radioChatter : DEFAULTS.radioChatter,
       radioVolume: finiteRange(raw.radioVolume, 0, 100, DEFAULTS.radioVolume),
@@ -108,7 +115,6 @@ export const BOT_SKILL = {
 
 export const TEAM_COLOR = { blue: 0x70b9d5, red: 0xdb8065 };
 export const FIXED_DT = 1 / 60;
-export const TDM_LIMIT = 40;
 export const MATCH_SECONDS = 360;
 export const ROUND_SECONDS = 100;
 export const ROUND_LIMIT = 5;

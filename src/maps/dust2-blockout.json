@@ -1,0 +1,101 @@
+{
+  "mapName": "de_dust2_complete_blockout",
+  "unitScale": 1.0,
+  "bounds": { "min": [-55, -5, -130], "max": [60, 15, 75] },
+  "regions": [
+    { "id": "t_spawn", "type": "zone", "bounds": { "x": 0, "y": 0, "z": -115, "width": 30, "height": 4, "depth": 18 }, "tags": ["spawn_t", "buyzone"], "cover": [
+      { "type": "wooden_crate", "pos": [-8, 0, -118], "size": [2, 2, 2] }, { "type": "wooden_crate", "pos": [9, 0, -112], "size": [2, 2, 2] }
+    ] },
+    { "id": "t_ramp", "type": "lane", "bounds": { "x": -25, "y": 0, "z": -100, "width": 14, "height": 4, "depth": 22 }, "tags": ["flank_t"], "cover": [
+      { "type": "concrete_wall", "pos": [-31, 0, -100], "size": [0.6, 3.5, 18] }
+    ] },
+    { "id": "outside_tunnels", "type": "lane", "bounds": { "x": -40, "y": 0, "z": -75, "width": 16, "height": 5, "depth": 26 }, "tags": ["connector"], "cover": [
+      { "type": "wooden_crate", "pos": [-44, 0, -80], "size": [2.5, 2.5, 2.5] }, { "type": "metal_barrel", "pos": [-35, 0, -68], "size": [1.2, 2, 1.2] }
+    ] },
+    { "id": "upper_tunnels", "type": "tunnel", "bounds": { "x": -40, "y": 2, "z": -25, "width": 12, "height": 4.5, "depth": 55 }, "tags": ["tunnel", "chokepoint", "dark"], "cover": [
+      { "type": "crate_stack", "pos": [-43, 2, -35], "size": [2, 4, 2] }, { "type": "support_pillar", "pos": [-36, 2, -15], "size": [1.5, 4.5, 1.5] }
+    ] },
+    { "id": "lower_tunnels", "type": "staircase", "bounds": { "x": -22, "y": 1, "z": -25, "width": 10, "height": 4.5, "depth": 20 }, "tags": ["tunnel", "chokepoint", "elevation_change"], "cover": [
+      { "type": "stair_steps", "pos": [-22, 0, -25], "size": [8, 2, 16] }
+    ] },
+    { "id": "b_site", "type": "site", "bounds": { "x": -40, "y": 3, "z": 45, "width": 26, "height": 6, "depth": 26 }, "tags": ["bombsite", "bombsite_b"], "cover": [
+      { "type": "default_boxes", "pos": [-40, 3, 45], "size": [3.5, 2.5, 3.5] }, { "type": "car", "pos": [-48, 3, 38], "size": [4.5, 1.8, 2.2], "rotY": 0.3 },
+      { "type": "scaffold", "pos": [-32, 3, 52], "size": [4, 3, 1.5] }, { "type": "back_b_boxes", "pos": [-49, 3, 54], "size": [2, 4, 2] }
+    ] },
+    { "id": "b_doors", "type": "chokepoint", "bounds": { "x": -24, "y": 2, "z": 32, "width": 8, "height": 5, "depth": 10 }, "tags": ["chokepoint", "doors"], "cover": [
+      { "type": "wooden_door", "pos": [-26, 2, 32], "size": [0.4, 3.8, 2.2] }, { "type": "wooden_door", "pos": [-22, 2, 32], "size": [0.4, 3.8, 2.2] }
+    ] },
+    { "id": "b_window", "type": "chokepoint", "bounds": { "x": -30, "y": 4.5, "z": 33, "width": 5, "height": 3, "depth": 6 }, "tags": ["elevated", "window"], "cover": [
+      { "type": "window_frame", "pos": [-30, 4.5, 33], "size": [3, 2.2, 0.5] }
+    ] },
+    { "id": "suicide", "type": "lane", "bounds": { "x": 0, "y": -2, "z": -80, "width": 6, "height": 5, "depth": 30 }, "tags": ["sniper_line", "danger_zone"], "cover": [] },
+    { "id": "top_mid", "type": "lane", "bounds": { "x": 0, "y": 0, "z": -45, "width": 14, "height": 5, "depth": 24 }, "tags": ["mid", "open"], "cover": [
+      { "type": "wooden_crate", "pos": [4, 0, -48], "size": [2, 2, 2] }
+    ] },
+    { "id": "xbox", "type": "cover", "bounds": { "x": -3, "y": 0, "z": -14, "width": 3.2, "height": 2.8, "depth": 3.2 }, "tags": ["jump_boost", "mid"], "cover": [
+      { "type": "metal_crate", "pos": [-3, 0, -14], "size": [3.2, 2.8, 3.2] }
+    ] },
+    { "id": "mid_doors", "type": "chokepoint", "bounds": { "x": 0, "y": 0, "z": 0, "width": 8, "height": 6, "depth": 10 }, "tags": ["chokepoint", "doors", "sniper_line"], "cover": [
+      { "type": "wooden_door", "pos": [-2, 0, 0], "size": [0.4, 4.2, 2.5] }, { "type": "wooden_door", "pos": [2, 0, 0], "size": [0.4, 4.2, 2.5] }
+    ] },
+    { "id": "ct_mid", "type": "lane", "bounds": { "x": 0, "y": 0, "z": 20, "width": 16, "height": 5, "depth": 24 }, "tags": ["mid", "ct_control"], "cover": [
+      { "type": "pickup_truck", "pos": [-6, 0, 22], "size": [4, 2, 2.2], "rotY": -0.2 }
+    ] },
+    { "id": "ct_spawn", "type": "zone", "bounds": { "x": 10, "y": 0, "z": 45, "width": 28, "height": 4.5, "depth": 18 }, "tags": ["spawn_ct", "buyzone"], "cover": [
+      { "type": "wooden_crate", "pos": [14, 0, 48], "size": [2.5, 2.5, 2.5] }
+    ] },
+    { "id": "catwalk", "type": "lane", "bounds": { "x": 14, "y": 2.5, "z": -20, "width": 7, "height": 4, "depth": 32 }, "tags": ["elevated", "lane"], "cover": [
+      { "type": "half_wall", "pos": [10.5, 2.5, -20], "size": [0.4, 1.2, 32] }
+    ] },
+    { "id": "short_a", "type": "lane", "bounds": { "x": 20, "y": 3.5, "z": 15, "width": 9, "height": 4, "depth": 28 }, "tags": ["chokepoint", "elevated"], "cover": [
+      { "type": "short_stairs", "pos": [18, 2.5, 2], "size": [8, 1.2, 6] }, { "type": "single_crate", "pos": [22, 3.5, 20], "size": [1.8, 1.8, 1.8] }
+    ] },
+    { "id": "long_doors", "type": "chokepoint", "bounds": { "x": 35, "y": 0, "z": -55, "width": 10, "height": 5.5, "depth": 18 }, "tags": ["chokepoint", "doors"], "cover": [
+      { "type": "double_doors", "pos": [35, 0, -55], "size": [0.4, 4, 4] }, { "type": "blue_container", "pos": [28, 0, -48], "size": [3, 3, 6] }
+    ] },
+    { "id": "long_a", "type": "lane", "bounds": { "x": 42, "y": 0, "z": -10, "width": 14, "height": 6, "depth": 65 }, "tags": ["sniper_line", "open_lane"], "cover": [
+      { "type": "car", "pos": [45, 0, -32], "size": [4.2, 1.7, 2], "rotY": 0.15 }, { "type": "barrel_cluster", "pos": [38, 0, -15], "size": [2, 1.8, 2] }
+    ] },
+    { "id": "pit", "type": "zone", "bounds": { "x": 46, "y": -2.5, "z": -62, "width": 14, "height": 4, "depth": 16 }, "tags": ["lowered_area", "defensive_hold"], "cover": [
+      { "type": "pit_brick_wall", "pos": [46, -1, -54], "size": [14, 1.5, 0.5] }, { "type": "slanted_ramp", "pos": [41, -1.25, -60], "size": [4, 2.5, 8] }
+    ] },
+    { "id": "a_ramp", "type": "staircase", "bounds": { "x": 38, "y": 2, "z": 28, "width": 10, "height": 4.5, "depth": 16 }, "tags": ["elevation_change", "ramp"], "cover": [
+      { "type": "ramp_mesh", "pos": [38, 2, 28], "size": [10, 2, 16] }
+    ] },
+    { "id": "a_site", "type": "site", "bounds": { "x": 32, "y": 4, "z": 48, "width": 22, "height": 6, "depth": 22 }, "tags": ["bombsite", "bombsite_a"], "cover": [
+      { "type": "default_boxes", "pos": [32, 4, 48], "size": [3.2, 2.4, 3.2] }, { "type": "single_crate", "pos": [35, 4, 52], "size": [2, 2, 2] }
+    ] },
+    { "id": "goose", "type": "zone", "bounds": { "x": 32, "y": 4, "z": 61, "width": 7, "height": 3.5, "depth": 6 }, "tags": ["defensive_corner"], "cover": [
+      { "type": "barrel", "pos": [30, 4, 62], "size": [1, 1.8, 1] }
+    ] }
+  ],
+  "connections": [
+    { "from": "t_spawn", "to": "t_ramp", "type": "open" },
+    { "from": "t_spawn", "to": "suicide", "type": "open" },
+    { "from": "t_spawn", "to": "long_doors", "type": "open" },
+    { "from": "t_ramp", "to": "outside_tunnels", "type": "open" },
+    { "from": "outside_tunnels", "to": "upper_tunnels", "type": "ramp", "elevationChange": 2 },
+    { "from": "upper_tunnels", "to": "b_site", "type": "open" },
+    { "from": "upper_tunnels", "to": "lower_tunnels", "type": "stairs", "elevationChange": -1 },
+    { "from": "lower_tunnels", "to": "top_mid", "type": "drop_or_stairs", "elevationChange": -1 },
+    { "from": "suicide", "to": "top_mid", "type": "open" },
+    { "from": "top_mid", "to": "xbox", "type": "jump" },
+    { "from": "xbox", "to": "catwalk", "type": "jump", "elevationChange": 2.5 },
+    { "from": "top_mid", "to": "catwalk", "type": "stairs", "elevationChange": 2.5 },
+    { "from": "top_mid", "to": "mid_doors", "type": "open" },
+    { "from": "mid_doors", "to": "ct_mid", "type": "doorway" },
+    { "from": "ct_mid", "to": "ct_spawn", "type": "open" },
+    { "from": "ct_mid", "to": "b_doors", "type": "open" },
+    { "from": "b_doors", "to": "b_site", "type": "doorway" },
+    { "from": "ct_spawn", "to": "b_window", "type": "window_jump", "elevationChange": 4.5 },
+    { "from": "b_window", "to": "b_site", "type": "drop", "elevationChange": -1.5 },
+    { "from": "catwalk", "to": "short_a", "type": "open", "elevationChange": 1 },
+    { "from": "short_a", "to": "a_site", "type": "open", "elevationChange": 0.5 },
+    { "from": "long_doors", "to": "long_a", "type": "doorway" },
+    { "from": "long_a", "to": "pit", "type": "ramp", "elevationChange": -2.5 },
+    { "from": "long_a", "to": "a_ramp", "type": "open" },
+    { "from": "a_ramp", "to": "a_site", "type": "ramp", "elevationChange": 2 },
+    { "from": "ct_spawn", "to": "a_site", "type": "ramp", "elevationChange": 4 },
+    { "from": "a_site", "to": "goose", "type": "open" }
+  ]
+}

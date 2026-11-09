@@ -9,8 +9,8 @@ export class Physics {
 
   constructor(arena: Arena) {
     this.world.timestep = FIXED_DT;
-    this.world.createCollider(RAPIER.ColliderDesc.cuboid(arena.width, .5, arena.depth).setTranslation(0, -.5, 0).setCollisionGroups(0x0001ffff));
-    for (const b of arena.boxes) this.world.createCollider(RAPIER.ColliderDesc.cuboid(b.w / 2, b.h / 2, b.d / 2).setTranslation(b.x, b.y, b.z).setCollisionGroups(0x0001ffff));
+    if (!arena.surface) this.world.createCollider(RAPIER.ColliderDesc.cuboid(arena.width / 2, .5, arena.depth / 2).setTranslation(0, -.5, 0).setCollisionGroups(0x0001ffff));
+    for (const b of arena.boxes) this.world.createCollider(RAPIER.ColliderDesc.cuboid(b.w / 2, b.h / 2, b.d / 2).setTranslation(b.x, b.y, b.z).setRotation({ x: 0, y: Math.sin((b.rotY ?? 0) / 2), z: 0, w: Math.cos((b.rotY ?? 0) / 2) }).setCollisionGroups(0x0001ffff));
     this.world.step();
   }
 
@@ -37,7 +37,7 @@ export class CharacterBody {
   crouched = false;
 
   constructor(private world: RAPIER.World, point: Point) {
-    this.body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(point.x, this.height + .04, point.z));
+    this.body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(point.x, (point.y ?? 0) + this.height + .04, point.z));
     this.collider = world.createCollider(RAPIER.ColliderDesc.capsule(.54, .32).setCollisionGroups(0x00020001), this.body);
     this.controller = world.createCharacterController(.025);
     this.controller.enableAutostep(.28, .3, false);
@@ -51,7 +51,7 @@ export class CharacterBody {
   }
 
   teleport(point: Point) {
-    const p = { x: point.x, y: this.height + .05, z: point.z };
+    const p = { x: point.x, y: (point.y ?? 0) + this.height + .05, z: point.z };
     this.body.setTranslation(p, true); this.body.setNextKinematicTranslation(p);
     this.world.propagateModifiedBodyPositionsToColliders();
     this.grounded = false;

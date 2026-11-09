@@ -1,9 +1,31 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { initPhysics, Physics } from '../src/physics';
 import { MAPS } from '../src/maps';
+import { Navigation } from '../src/navigation';
+import { surfaceHeight } from '../src/map-schema';
 
 beforeAll(async () => { await initPhysics(); });
 describe('Rapier character controller', () => {
+  it('spawns above/below zero on JSON floors and physically climbs the inferred site steps', () => {
+    const arena = MAPS.dust2_blockout, physics = new Physics(arena), nav = new Navigation(arena);
+    const start = arena.blue[2], destination = nav.point(nav.nearest({ x: 30, z: 76 }));
+    const actor = physics.character(start), path = nav.path(start, destination);
+    expect(path.length).toBeGreaterThan(0);
+    for (let i = 0; i < 1600 && path.length; i++) {
+      const p = actor.position(), goal = path[0], d = Math.hypot(goal.x - p.x, goal.z - p.z);
+      if (d < .25) path.shift();
+      else actor.move((goal.x - p.x) / d * .07, -.06, (goal.z - p.z) / d * .07);
+      physics.world.step();
+    }
+    const p = actor.position();
+    expect(Math.hypot(p.x - destination.x, p.z - destination.z)).toBeLessThan(1);
+    expect(p.y).toBeGreaterThan(3);
+    const pit = { x: -2.5, z: -52.5, y: surfaceHeight(arena, { x: -2.5, z: -52.5 }) };
+    actor.teleport(pit);
+    for (let i = 0; i < 30; i++) { actor.move(0, -.05, 0); physics.world.step(); }
+    expect(actor.position().y).toBeCloseTo(pit.y!, 1);
+    physics.dispose();
+  });
   it('applies grenade weight and bounce to actual simulated trajectories', () => {
     const physics = new Physics({ ...MAPS.india, boxes: [] });
     const light = physics.grenade({ x: -5, y: 5, z: 0 }, { x: 0, y: 0, z: 0 }, 'light', true);

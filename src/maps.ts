@@ -1,9 +1,13 @@
 import type { MapId } from './config';
 import type { Box, Point } from './math';
+import { BIOMES, type BiomeId } from './biomes';
+import { compileMap, type SurfaceGrid } from './map-schema';
+import dust2 from './maps/dust2-blockout.json';
 
 export interface Arena {
   id: MapId; name: string; subtitle: string; description: string;
   width: number; depth: number; sky: number; fog: number; ground: number; wall: number; accent: number;
+  biome: BiomeId; surface?: SurfaceGrid;
   boxes: Box[]; routes: Point[]; blue: Point[]; red: Point[];
   navCell?: number; viewDistance?: number; fogNear?: number; sniperSight?: number; scopeFov?: number;
   areas?: Array<Point & { name: string; radius: number }>;
@@ -15,9 +19,14 @@ const crate = (x: number, z: number, w = 2, d = 2, h = 1.6) => box(x, z, w, d, h
 const bounds = (w: number, d: number): Box[] => [box(-w / 2, 0, 1, d + 1, 6, 'wall'), box(w / 2, 0, 1, d + 1, 6, 'wall'), box(0, -d / 2, w, 1, 6, 'wall'), box(0, d / 2, w, 1, 6, 'wall')];
 const spawns = (z: number): Point[] => [0, -8, 8, -4, 4].map(x => ({ x, z }));
 
+const arena = (id: MapId, name: string, biome: BiomeId, width: number, depth: number, subtitle: string, description: string, boxes: Box[], routes: Point[]): Arena => ({
+  ...BIOMES[biome], id, name, biome, width, depth, subtitle, description, boxes: [...bounds(width, depth), ...boxes], routes,
+  blue: spawns(depth / 2 - 6), red: spawns(-depth / 2 + 6), viewDistance: Math.max(width, depth) * 2, fogNear: Math.max(width, depth) * .75,
+});
+
 export const MAPS: Record<MapId, Arena> = {
   dust: {
-    id: 'dust', name: 'DUST II', subtitle: 'CLASSIC ROUTES / LONG · MID · TUNNELS',
+    id: 'dust', name: 'DUST II', biome: 'desert', subtitle: 'CLASSIC ROUTES / LONG · MID · TUNNELS',
     description: 'Dust2-inspired routing: Long A and pit, short/catwalk, mid double doors, B tunnels, and a defender-side A/B rotation.',
     width: 80, depth: 88, sky: 0xc6c4b0, fog: 0xc9c1a5, ground: 0xb9a27a, wall: 0xc8af83, accent: 0x8f6650,
     viewDistance: 150, fogNear: 60,
@@ -54,7 +63,7 @@ export const MAPS: Record<MapId, Arena> = {
     ],
   },
   snow: {
-    id: 'snow', name: 'SNOW OUTPOST', subtitle: 'COLD AIR / CLOSE QUARTERS',
+    id: 'snow', name: 'SNOW OUTPOST', biome: 'snow', subtitle: 'COLD AIR / CLOSE QUARTERS',
     description: 'An isolated outpost. Split pushes around a central depot.',
     width: 58, depth: 66, sky: 0xa8bdc9, fog: 0xc7d6df, ground: 0xd5e0e3, wall: 0x758b94, accent: 0x425c63,
     boxes: [
@@ -68,7 +77,7 @@ export const MAPS: Record<MapId, Arena> = {
     blue: spawns(28), red: spawns(-28),
   },
   india: {
-    id: 'india', name: 'INDIA COURT', subtitle: 'OPEN SKY / LONG SIGHTLINES',
+    id: 'india', name: 'INDIA COURT', biome: 'urban', subtitle: 'OPEN SKY / LONG SIGHTLINES',
     description: 'A symmetrical courtyard. Long angles reward a steady hand.',
     width: 58, depth: 66, sky: 0xc5cfcd, fog: 0xc4c8b9, ground: 0xabaa91, wall: 0xc3b79c, accent: 0x687c72,
     boxes: [
@@ -85,7 +94,7 @@ export const MAPS: Record<MapId, Arena> = {
     blue: spawns(25), red: spawns(-25),
   },
   longshot: {
-    id: 'longshot', name: 'LONGSHOT RANGE', subtitle: '320 × 420 M / EXTREME RANGE',
+    id: 'longshot', name: 'LONGSHOT RANGE', biome: 'forest', subtitle: '320 × 420 M / EXTREME RANGE',
     description: 'A vast, open proving ground. Sparse cover, 370-metre spawn sightlines. AWP recommended.',
     width: 320, depth: 420, sky: 0xc5d4d9, fog: 0xcdd9d8, ground: 0xb3b29b, wall: 0x9a9f8d, accent: 0x657e75,
     navCell: 4, viewDistance: 900, fogNear: 300, sniperSight: 600, scopeFov: 12,
@@ -104,4 +113,39 @@ export const MAPS: Record<MapId, Arena> = {
     blue: spawns(185).map(p => ({ x: p.x * 3, z: p.z })),
     red: spawns(-185).map(p => ({ x: p.x * 3, z: p.z })),
   },
+  dust2_blockout: compileMap(dust2, 'dust2_blockout', 'DUST II BLOCKOUT', 'desert'),
+  canopy: arena('canopy', 'CANOPY RUINS', 'jungle', 76, 84, 'JUNGLE / RUINS · COVERED FLANKS', 'A ruined temple divides a jungle clearing. Broken columns and low stone cover conceal two outer flanks.', [
+    box(0, 0, 16, 22, 6), box(-23, -17, 10, 12, 4), box(24, 19, 12, 10, 4),
+    ...[-1, 1].flatMap(s => [box(s * 13, s * 25, 3, 3, 5), box(s * 28, -s * 5, 3, 3, 5), box(s * 30, -s * 26, 9, 2, 2.8, 'wall'), crate(s * 11, -s * 13, 3, 3, 1.2)]),
+    { x: 0, y: 6, z: 0, w: 26, d: 1, h: .4, kind: 'beam' },
+  ], [{ x: -14, z: 0 }, { x: 14, z: 0 }, { x: -31, z: 8 }, { x: 31, z: -8 }, { x: 0, z: 27 }]),
+  dockyard: arena('dockyard', 'TIDELINE DOCKYARD', 'coast', 90, 104, 'COAST / CONTAINERS · SHIPPING LANES', 'Staggered shipping containers split long pier sightlines. A central loading yard enables fast cross-lane rotations.', [
+    ...[-1, 1].flatMap(s => [box(s * 22, -s * 27, 6, 20, 3.4, 'crate', 0x466f85), box(s * 22, s * 16, 6, 16, 3.4, 'crate', 0x9e674c), box(s * 35, s * 3, 9, 18, 6), crate(s * 8, s * 17, 4, 5, 1.5), box(s * 7, -s * 37, 12, 2, 2.8, 'wall')]),
+    crate(0, 0, 9, 7, 2.2), { x: 0, y: 5, z: -10, w: 18, d: 1, h: .5, kind: 'beam' },
+  ], [{ x: -13, z: 0 }, { x: 13, z: 0 }, { x: -39, z: -24 }, { x: 39, z: 24 }, { x: 0, z: -27 }]),
+  alpine: arena('alpine', 'ALPINE RELAY', 'snow', 80, 100, 'ALPINE / RELAY HOUSES · EXPOSED CROSSES', 'Three relay houses break up a snowy mountain station. Sheltered side passages contrast with an exposed central crossing.', [
+    box(-20, -17, 18, 18, 6.5), box(20, 17, 18, 18, 6.5), box(0, 0, 10, 10, 8),
+    ...[-1, 1].flatMap(s => [box(s * 28, -s * 25, 14, 3, 2.4, 'wall'), crate(s * 10, s * 31, 4, 4, 1.2), box(s * 29, s * 5, 3, 12, 3, 'wall')]),
+    crate(-9, 8, 3, 3, 1.3), crate(9, -8, 3, 3, 1.3),
+  ], [{ x: -10, z: 0 }, { x: 10, z: 0 }, { x: -33, z: 12 }, { x: 33, z: -12 }, { x: 0, z: -32 }]),
+  redrock: arena('redrock', 'REDROCK PASS', 'canyon', 100, 120, 'CANYON / WINDING PASSES · LONG ANGLES', 'Offset rock mesas form a winding central pass, with broad outer routes and scattered boulders for long-range duels.', [
+    box(-18, -22, 20, 24, 9, 'building', 0xa76448), box(18, 22, 20, 24, 9, 'building', 0xbb7851),
+    box(-34, 22, 18, 12, 7), box(34, -22, 18, 12, 7),
+    ...[-1, 1].flatMap(s => [box(s * 8, -s * 44, 10, 5, 2.5, 'wall'), box(s * 37, -s * 44, 5, 7, 3, 'wall'), crate(s * 10, s * 4, 3, 4, 1.2), box(s * 40, s * 43, 7, 6, 4, 'wall')]),
+  ], [{ x: 0, z: 0 }, { x: -35, z: -10 }, { x: 35, z: 10 }, { x: -13, z: 35 }, { x: 13, z: -35 }]),
+  quarter: arena('quarter', 'OLD QUARTER', 'urban', 72, 90, 'URBAN / ALLEYS · COURTYARD ROTATIONS', 'An asymmetric street network surrounds a small plaza. Doorway peeks and sheltered alleys reward aggressive rotations.', [
+    box(-20, -23, 16, 18, 7), box(19, 25, 18, 15, 6), box(21, -17, 14, 22, 8), box(-23, 16, 12, 20, 7),
+    box(-5, -10, 9, 13, 5.5), box(4, 14, 10, 9, 5),
+    crate(0, 0, 3, 3, 1.1), crate(-10, 30, 2, 3, 1.3), crate(10, -32, 3, 2, 1.3),
+    box(-13, -1, 2, .4, 3.2, 'door'), box(13, 5, 2, .4, 3.2, 'door'),
+  ], [{ x: 0, z: 0 }, { x: -12, z: 18 }, { x: 12, z: -17 }, { x: -32, z: -6 }, { x: 32, z: 7 }]),
+  foundry: arena('foundry', 'IRONWORKS FOUNDRY', 'industrial', 70, 86, 'INDUSTRIAL / MACHINERY · TIGHT ENGAGEMENTS', 'Heavy machinery splits a compact production yard. Overhead gantries frame three interconnected fighting lanes.', [
+    box(-15, 0, 8, 30, 4), box(15, 0, 8, 30, 4), box(0, -23, 9, 7, 4.5), box(0, 23, 9, 7, 4.5),
+    ...[-1, 1].flatMap(s => [crate(s * 26, s * 20, 4, 4, 2.2), crate(s * 6, s * 5, 2, 3, 1.2), box(s * 26, -s * 5, 5, 8, 3, 'wall')]),
+    { x: 0, y: 5.4, z: 0, w: 48, d: 3, h: .5, kind: 'beam' },
+  ], [{ x: 0, z: 0 }, { x: -25, z: -15 }, { x: 25, z: 15 }, { x: -9, z: 23 }, { x: 9, z: -23 }]),
+  pinewatch: arena('pinewatch', 'PINEWATCH CAMP', 'forest', 92, 110, 'FOREST / CABINS · LOGGING TRAILS', 'A logging camp with offset cabins, stacked timber, and broad woodland flanks. Mixed sightlines suit rifles and snipers.', [
+    box(-22, -20, 16, 16, 5), box(22, 20, 16, 16, 5), box(0, 0, 10, 16, 5.5),
+    ...[-1, 1].flatMap(s => [box(s * 31, s * 30, 12, 3, 1.4, 'crate', 0x79634d), box(s * 16, -s * 2, 3, 12, 1.4, 'crate', 0x79634d), crate(s * 9, s * 36, 3, 4, 1.2), box(s * 37, -s * 30, 5, 5, 3, 'wall')]),
+  ], [{ x: -10, z: 0 }, { x: 10, z: 0 }, { x: -35, z: 5 }, { x: 35, z: -5 }, { x: 0, z: 30 }]),
 };

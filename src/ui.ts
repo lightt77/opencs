@@ -1,11 +1,12 @@
 import type { Game } from './game';
-import { DEFAULTS, PRIMARIES, ROUND_LIMIT, TDM_LIMIT, WEAPON_IDS, WEAPONS, isGrenade, loadSettings, type Settings, type WeaponId } from './config';
+import { DEFAULTS, PRIMARIES, ROUND_LIMIT, WEAPON_IDS, WEAPONS, isGrenade, loadSettings, type Settings, type WeaponId } from './config';
 import { MAPS, type Arena } from './maps';
 import { clamp } from './math';
 import { SOUND_PACKS, soundPackDescription } from './audio';
 import { CUSTOM_WEAPONS } from './custom-audio';
 import { Vector3 } from 'three';
 import { BOT_PROFILES, profileLabel, sanitizeProfiles } from './bot-profiles';
+import { BIOMES, type BiomeId } from './biomes';
 
 const escapeHTML = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
@@ -14,18 +15,18 @@ const arrow = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="
 const timeString = (seconds: number) => `${Math.floor(Math.max(0, seconds) / 60).toString().padStart(2, '0')}:${Math.floor(Math.max(0, seconds) % 60).toString().padStart(2, '0')}`;
 
 export function mapSvg(arena: Arena) {
-  const color = arena.id === 'snow' ? '#aec8d0' : arena.id === 'india' ? '#a6b5a0' : '#c7ab79';
+  const color = `#${BIOMES[arena.biome].wall.toString(16).padStart(6, '0')}`;
   const sx = 58 / arena.width, sz = 66 / arena.depth;
   return `<svg class="map-art" viewBox="0 0 232 150" aria-hidden="true">
     <defs><pattern id="grid-${arena.id}" width="12" height="12" patternUnits="userSpaceOnUse"><path d="M12 0H0v12" fill="none" stroke="${color}" stroke-opacity=".12" stroke-width=".6"/></pattern></defs>
     <rect width="232" height="150" fill="url(#grid-${arena.id})"/>
     <g transform="translate(116 74) rotate(-28) scale(1.6 .96) translate(-29 -33)">
       <rect x="0" y="0" width="58" height="66" fill="${color}" fill-opacity=".07" stroke="${color}" stroke-opacity=".5" stroke-width=".7"/>
-      ${arena.boxes.filter(b => b.kind !== 'beam' && b.w < arena.width / 2 && b.d < arena.depth / 2).map(b => `<rect x="${(b.x - b.w / 2) * sx + 29}" y="${(b.z - b.d / 2) * sz + 33}" width="${b.w * sx}" height="${b.d * sz}" fill="${color}" fill-opacity="${b.kind === 'crate' ? '.25' : '.5'}" stroke="${color}" stroke-width=".35"/>`).join('')}
+      ${arena.boxes.filter(b => b.kind !== 'beam' && b.kind !== 'floor' && b.w < arena.width / 2 && b.d < arena.depth / 2).map(b => `<rect x="${(b.x - b.w / 2) * sx + 29}" y="${(b.z - b.d / 2) * sz + 33}" width="${b.w * sx}" height="${b.d * sz}" transform="rotate(${(b.rotY ?? 0) * -180 / Math.PI} ${b.x * sx + 29} ${b.z * sz + 33})" fill="${color}" fill-opacity="${b.kind === 'crate' ? '.25' : '.5'}" stroke="${color}" stroke-width=".35"/>`).join('')}
       <path d="M29 60V40M29 6V24" stroke="${color}" stroke-dasharray="2 2" stroke-opacity=".65"/>
       <circle cx="29" cy="60" r="1.6" fill="#8cc3d2"/><circle cx="29" cy="6" r="1.6" fill="#da967d"/>
       ${(arena.sites ?? []).map(site => `<text x="${site.x * sx + 29}" y="${site.z * sz + 34}" fill="#edb978" font-size="6" font-family="monospace" font-weight="bold" text-anchor="middle">${site.label}</text>`).join('')}
-    </g><text x="12" y="137" fill="${color}" font-size="8" font-family="monospace" opacity=".55">SECTOR 0${Object.keys(MAPS).indexOf(arena.id) + 1} // ${arena.width} × ${arena.depth}</text>
+    </g><text x="12" y="137" fill="${color}" font-size="8" font-family="monospace" opacity=".55">SECTOR ${String(Object.keys(MAPS).indexOf(arena.id) + 1).padStart(2, '0')} // ${arena.width} × ${arena.depth}</text>
   </svg>`;
 }
 
@@ -42,6 +43,7 @@ export class UI {
   private popupElements = new Map<number, HTMLElement>();
   private popupPoint = new Vector3();
   private lanName = '';
+  private biomeFilter: BiomeId | 'all' = 'all';
 
   constructor(readonly game: Game) {
     this.root = document.querySelector('#app')!;
@@ -90,10 +92,11 @@ export class UI {
           <h1 id="hero-title">SMALL MAPS.<br><span>BIG STAKES.</span></h1>
           <p class="intro">Old-school gunplay. A fresh field of play.<br><span>Find your angle. Trust your squad. Make every shot count.</span></p>
           <div class="section-label"><span>01 — SELECT YOUR BATTLEFIELD</span><span class="quiet">${Object.keys(MAPS).length} AVAILABLE</span></div>
+          <label class="biome-filter">BIOME <select id="biome-filter" class="pack-select"><option value="all">ALL BIOMES</option>${Object.entries(BIOMES).map(([id, b]) => `<option value="${id}" ${this.biomeFilter === id ? 'selected' : ''}>${b.name.toUpperCase()}</option>`).join('')}</select></label>
           <div class="map-grid" role="group" aria-label="Battlefield">
-            ${Object.values(MAPS).map((map, i) => `<button class="map-card ${s.map === map.id ? 'selected' : ''}" data-map="${map.id}" aria-pressed="${s.map === map.id}" aria-label="${map.name}">
-              <span class="map-number">0${i + 1}</span><span class="map-check">↗</span>${mapSvg(map)}
-              <span class="map-caption"><strong>${map.name}</strong><small>${map.subtitle.split(' / ')[1]}</small></span>
+            ${Object.values(MAPS).filter(map => this.biomeFilter === 'all' || map.biome === this.biomeFilter).map(map => `<button class="map-card ${s.map === map.id ? 'selected' : ''}" data-map="${map.id}" aria-pressed="${s.map === map.id}" aria-label="${map.name}">
+              <span class="map-number">${String(Object.keys(MAPS).indexOf(map.id) + 1).padStart(2, '0')}</span><span class="map-check">↗</span>${mapSvg(map)}
+              <span class="map-caption"><strong>${map.name}</strong><small>${BIOMES[map.biome].name.toUpperCase()} · ${map.subtitle.split(' / ')[1]}</small></span>
             </button>`).join('')}
           </div>
           <div class="field-stats"><span><b>${s.teamSize} <i>vs</i> ${s.teamSize}</b> SQUAD COMBAT</span><span><b>08</b> WEAPONS & UTILITY</span><span><b>100%</b> IN YOUR BROWSER</span></div>
@@ -103,7 +106,7 @@ export class UI {
           <div class="setup-content">
             <div class="control-label"><span>GAME MODE</span><span>02</span></div>
             <div class="mode-options" role="group" aria-label="Game mode">
-              <button data-mode="tdm" class="mode-option ${s.mode === 'tdm' ? 'selected' : ''}" aria-pressed="${s.mode === 'tdm'}"><span class="mode-icon">≋</span><span><strong>TEAM DEATHMATCH</strong><small>Respawn. Regroup. First to ${TDM_LIMIT}.</small></span><span class="radio"></span></button>
+              <button data-mode="tdm" class="mode-option ${s.mode === 'tdm' ? 'selected' : ''}" aria-pressed="${s.mode === 'tdm'}"><span class="mode-icon">≋</span><span><strong>TEAM DEATHMATCH</strong><small>${timeString(s.matchDuration)} · Most kills at timeout. No kill cap.</small></span><span class="radio"></span></button>
               <button data-mode="elimination" class="mode-option ${s.mode === 'elimination' ? 'selected' : ''}" aria-pressed="${s.mode === 'elimination'}"><span class="mode-icon">◇</span><span><strong>ELIMINATION</strong><small>One life. Every angle matters.</small></span><span class="radio"></span></button>
             </div>
             <div class="control-label"><span>BOT DIFFICULTY</span><button class="text-button" id="bot-profiles">BOT PROFILES ↗</button></div>
@@ -111,6 +114,7 @@ export class UI {
              <div class="control-label"><span>PRIMARY WEAPON</span><span>${s.map === 'longshot' ? 'AWP RECOMMENDED' : 'ALLOWED LOADOUT'}</span></div>
              <div class="segments weapons" role="group" aria-label="Primary weapon">${PRIMARIES.map(id => `<button data-primary="${id}" ${s.allowedWeapons.includes(id) ? '' : 'disabled'} class="${s.primary === id && s.allowedWeapons.includes(id) ? 'selected' : ''}" aria-pressed="${s.primary === id && s.allowedWeapons.includes(id)}"><span class="weapon-glyph">${id === 'awp' ? '━╋━' : '━┳┓'}</span>${WEAPONS[id].name}</button>`).join('')}</div>
              <button class="secondary-button rules-button" id="weapon-rules">WEAPON RULES · ${s.allowedWeapons.map(id => WEAPONS[id].short).join(' + ')}</button>
+             <label class="checkbox-label"><span>AUTO MAP ROTATION <small>${s.rotationDelay}s scoreboard, random next map, cumulative session scores.</small></span><input id="auto-play" type="checkbox" ${s.autoRotate ? 'checked' : ''} /></label>
             <div class="squad-note"><span class="status-dot"></span> YOU + ${s.teamSize - 1} ALLIES <span>VS</span> ${s.teamSize} ENEMY BOTS</div>
             <button class="deploy-button" id="deploy"><span>DEPLOY TO ${s.map.toUpperCase()}</span>${arrow}</button>
             <button class="secondary-button rules-button" id="lan-play">LOCAL WI-FI · HOST / JOIN ROOM</button>
@@ -126,6 +130,8 @@ export class UI {
   private renderMenu() {
     this.menu.innerHTML = this.menuHTML();
     this.menu.querySelector('.brand')!.addEventListener('click', e => e.preventDefault());
+    this.menu.querySelector('#biome-filter')!.addEventListener('change', event => { this.biomeFilter = (event.target as HTMLSelectElement).value as typeof this.biomeFilter; this.renderMenu(); });
+    this.menu.querySelector('#auto-play')!.addEventListener('change', event => { this.settings.autoRotate = (event.target as HTMLInputElement).checked; this.save(); this.game.preview(this.settings); });
     for (const key of ['map', 'mode', 'difficulty', 'primary'] as const) {
       this.menu.querySelectorAll<HTMLButtonElement>(`[data-${key}]`).forEach(button => button.addEventListener('click', () => {
         Object.assign(this.settings, { [key]: button.dataset[key] });
@@ -184,7 +190,7 @@ export class UI {
       <div class="hud-vignette"></div><div class="damage-wash" id="damage-wash"></div><div class="flash-wash" id="flash-wash"></div>
       <div class="smoke-wash" id="smoke-wash"></div>
       <div class="hud-map"><div class="hud-map-title"><span class="status-dot"></span><span id="map-name"></span></div><canvas width="196" height="220" aria-label="Tactical minimap"></canvas><span class="map-footer">N ↑ <span id="location-name">FRIENDLIES ONLY</span></span></div>
-      <div class="match-strip"><div class="team-score blue"><span>BLUE</span><b id="blue-score">0</b></div><div class="match-clock"><strong id="clock">06:00</strong><span id="match-label">FIRST TO 40</span></div><div class="team-score red"><b id="red-score">0</b><span>RED</span></div></div>
+      <div class="match-strip"><div class="team-score blue"><span>BLUE</span><b id="blue-score">0</b></div><div class="match-clock"><strong id="clock">06:00</strong><span id="match-label">TIMED DEATHMATCH</span></div><div class="team-score red"><b id="red-score">0</b><span>RED</span></div></div>
       <div class="performance"><b id="fps">60 FPS</b><span>LOCAL MATCH · <span id="difficulty-label">MEDIUM</span></span></div>
       <div class="kill-feed" id="kill-feed"></div>
       <div class="radio-message" id="radio-message" aria-live="polite" hidden></div>
@@ -211,6 +217,7 @@ export class UI {
     this.menu.hidden = screen !== 'menu';
     this.hud.hidden = screen === 'menu';
     this.overlay.hidden = screen === 'playing' || screen === 'menu';
+    if (screen === 'playing') this.overlay.innerHTML = '';
     if (screen === 'menu') this.renderMenu();
     if (screen === 'paused') this.pauseHTML();
     if (screen === 'finished') this.results();
@@ -280,6 +287,10 @@ export class UI {
       <label class="slider-label" for="jumpGravity">JUMP GRAVITY <output>${s.jumpGravity} m/s²</output></label><input id="jumpGravity" type="range" min="10" max="35" step="1" value="${s.jumpGravity}" />
       <label class="checkbox-label"><span>DOUBLE JUMP <small>Press Space again in the air for one extra jump.</small></span><input id="doubleJump" type="checkbox" ${s.doubleJump ? 'checked' : ''} /></label>
       <h3>ROUND TIMING</h3>
+      <label class="slider-label" for="matchDuration">DEATHMATCH DURATION <output>${timeString(s.matchDuration)}</output></label><input id="matchDuration" type="range" min="30" max="3600" step="30" value="${s.matchDuration}" />
+      <label class="slider-label" for="roundDuration">ELIMINATION ROUND DURATION <output>${timeString(s.roundDuration)}</output></label><input id="roundDuration" type="range" min="15" max="600" step="5" value="${s.roundDuration}" />
+      <label class="checkbox-label"><span>AUTO MAP ROTATION <small>Keep playing: random different map after results. Team session scores and operator kills/deaths accumulate. Elimination rounds also advance automatically.</small></span><input id="autoRotate" type="checkbox" ${s.autoRotate ? 'checked' : ''} /></label>
+      <label class="slider-label" for="rotationDelay">SCOREBOARD / MAP SWITCH DELAY <output>${s.rotationDelay}s</output></label><input id="rotationDelay" type="range" min="3" max="30" step="1" value="${s.rotationDelay}" />
       <label class="slider-label" for="freezeTime">START FREEZE <output>${s.freezeTime}s</output></label><input id="freezeTime" type="range" min="0" max="10" step="0.5" value="${s.freezeTime}" />
       <label class="slider-label" for="roundEndDelay">ROUND-END BUFFER <output>${s.roundEndDelay}s</output></label><input id="roundEndDelay" type="range" min="0" max="6" step="0.5" value="${s.roundEndDelay}" />
       <p class="settings-hint">Hold Shift + forward to sprint. Hold Ctrl or C to crouch and move quietly. Round-end buffer plays before loadout/results.</p>
@@ -320,16 +331,16 @@ export class UI {
       </section>
       <button class="secondary-button" id="reset-settings">RESTORE DEFAULTS</button><p class="dialog-footnote">Saved on this device. Match options stay unchanged.</p>
     </section>`;
-    for (const key of ['sensitivity', 'volume', 'fov', 'movementSpeed', 'jumpGravity', 'freezeTime', 'roundEndDelay', 'radioVolume', 'grenadeCapacity', 'refillDelay', 'teamSize', 'grenadePower'] as const) {
+    for (const key of ['sensitivity', 'volume', 'fov', 'movementSpeed', 'jumpGravity', 'freezeTime', 'roundEndDelay', 'radioVolume', 'grenadeCapacity', 'refillDelay', 'teamSize', 'grenadePower', 'matchDuration', 'roundDuration', 'rotationDelay'] as const) {
       const input = this.overlay.querySelector<HTMLInputElement>(`#${key}`)!;
       input.addEventListener('input', () => {
         this.settings[key] = Number(input.value);
         const value = this.settings[key];
-        input.previousElementSibling!.querySelector('output')!.textContent = key === 'sensitivity' ? value.toFixed(2) : key === 'movementSpeed' ? `${value.toFixed(1)}×` : `${value}${key === 'fov' ? '°' : key === 'jumpGravity' ? ' m/s²' : key === 'grenadePower' ? ' m/s' : key === 'freezeTime' || key === 'roundEndDelay' || key === 'refillDelay' ? 's' : key === 'grenadeCapacity' || key === 'teamSize' ? '' : '%'}`;
+        input.previousElementSibling!.querySelector('output')!.textContent = key === 'matchDuration' || key === 'roundDuration' ? timeString(value) : key === 'sensitivity' ? value.toFixed(2) : key === 'movementSpeed' ? `${value.toFixed(1)}×` : `${value}${key === 'fov' ? '°' : key === 'jumpGravity' ? ' m/s²' : key === 'grenadePower' ? ' m/s' : key === 'freezeTime' || key === 'roundEndDelay' || key === 'refillDelay' || key === 'rotationDelay' ? 's' : key === 'grenadeCapacity' || key === 'teamSize' ? '' : '%'}`;
         this.applySettings();
       });
     }
-    for (const key of ['shadows', 'doubleJump', 'radioChatter', 'botFill', 'grenadeBounce'] as const) {
+    for (const key of ['shadows', 'doubleJump', 'radioChatter', 'botFill', 'grenadeBounce', 'autoRotate'] as const) {
       this.overlay.querySelector(`#${key}`)!.addEventListener('change', event => {
         this.settings[key] = (event.target as HTMLInputElement).checked; this.applySettings();
       });
@@ -377,7 +388,7 @@ export class UI {
     this.overlay.querySelector('#preview-sound')!.addEventListener('click', () => { void this.game.sound.preview(this.settings.primary); });
     this.overlay.querySelector('#manage-sounds')!.addEventListener('click', () => this.customAudioDialog());
     this.overlay.querySelector('#reset-settings')!.addEventListener('click', () => {
-      Object.assign(this.settings, { sensitivity: DEFAULTS.sensitivity, volume: DEFAULTS.volume, fov: DEFAULTS.fov, shadows: DEFAULTS.shadows, movementSpeed: DEFAULTS.movementSpeed, doubleJump: DEFAULTS.doubleJump, jumpGravity: DEFAULTS.jumpGravity, soundPack: DEFAULTS.soundPack, freezeTime: DEFAULTS.freezeTime, roundEndDelay: DEFAULTS.roundEndDelay, effectsPack: DEFAULTS.effectsPack, radioChatter: DEFAULTS.radioChatter, radioVolume: DEFAULTS.radioVolume });
+      Object.assign(this.settings, { sensitivity: DEFAULTS.sensitivity, volume: DEFAULTS.volume, fov: DEFAULTS.fov, shadows: DEFAULTS.shadows, movementSpeed: DEFAULTS.movementSpeed, doubleJump: DEFAULTS.doubleJump, jumpGravity: DEFAULTS.jumpGravity, soundPack: DEFAULTS.soundPack, freezeTime: DEFAULTS.freezeTime, roundEndDelay: DEFAULTS.roundEndDelay, matchDuration: DEFAULTS.matchDuration, roundDuration: DEFAULTS.roundDuration, rotationDelay: DEFAULTS.rotationDelay, autoRotate: DEFAULTS.autoRotate, effectsPack: DEFAULTS.effectsPack, radioChatter: DEFAULTS.radioChatter, radioVolume: DEFAULTS.radioVolume });
       this.applySettings(); this.openSettings();
     });
     this.overlay.querySelector('.close-button')!.addEventListener('click', () => this.closeDialog());
@@ -471,9 +482,10 @@ export class UI {
       <div class="result-score"><span class="blue-text">${g.scores.blue}<small>BLUE TEAM</small></span><i>:</i><span class="red-text">${g.scores.red}<small>RED TEAM</small></span></div>
       <div class="personal-stats"><div><b>${g.player.kills}</b><span>KILLS</span></div><div><b>${g.player.deaths}</b><span>DEATHS</span></div><div><b>${(g.player.kills / Math.max(1, g.player.deaths)).toFixed(1)}</b><span>K / D</span></div></div>
       <div class="round-board" aria-label="Player scores">${this.scoreboardHTML(true)}</div>
-      <button class="deploy-button" id="rematch"><span>${g.network ? 'NEW LAN ROOM' : 'RUN IT BACK'}</span>${arrow}</button><button class="text-button exit-button" id="back-menu">BACK TO MISSION SETUP</button>
+      ${g.nextMap ? `<p id="rotation-status" aria-live="polite">NEXT: ${MAPS[g.nextMap].name} · ${Math.ceil(g.rotationRemaining)}s</p><p class="settings-hint">Auto mode keeps mouse capture for seamless play. ESC releases your mouse; click Resume when ready. Session totals last until you leave.</p>${!g.network || g.lan.host ? '<button class="secondary-button" id="stop-rotation">STOP AUTO ROTATION</button>' : '<p class="settings-hint">The host controls map rotation.</p>'}` : `<button class="deploy-button" id="rematch"><span>${g.network ? 'NEW LAN ROOM' : 'RUN IT BACK'}</span>${arrow}</button>`}<button class="text-button exit-button" id="back-menu">BACK TO MISSION SETUP</button>
     </section>`;
-    this.overlay.querySelector('#rematch')!.addEventListener('click', () => { if (g.network) { g.toMenu(); this.lanDialog(); } else g.start(this.settings); });
+    this.overlay.querySelector('#rematch')?.addEventListener('click', () => { if (g.network) { g.toMenu(); this.lanDialog(); } else g.start(this.settings); });
+    this.overlay.querySelector('#stop-rotation')?.addEventListener('click', () => g.stopRotation());
     this.overlay.querySelector('#back-menu')!.addEventListener('click', () => this.game.toMenu());
   }
 
@@ -485,6 +497,8 @@ export class UI {
     const g = this.game, p = g.player;
     if (!p || g.screen === 'menu') return;
     const e = this.hudElements;
+    const rotation = this.overlay.querySelector('#rotation-status');
+    if (rotation && g.nextMap) rotation.textContent = `NEXT: ${MAPS[g.nextMap].name} · ${Math.ceil(g.rotationRemaining)}s`;
     const damage = Math.max(0, 1 - (g.time - g.lastDamage) / .65);
     e['damage-wash'].style.opacity = String(damage * .6);
     e['damage-direction'].style.opacity = String(damage);
@@ -513,7 +527,7 @@ export class UI {
     this.set('location-name', area?.name ?? 'FRIENDLIES ONLY');
     this.set('clock', timeString(g.phase !== 'live' ? g.phaseTime : g.remaining));
     e['clock'].classList.toggle('time-low', g.remaining < 20 && g.phase === 'live');
-    this.set('match-label', g.settings.mode === 'tdm' ? `FIRST TO ${TDM_LIMIT}` : `ROUND ${g.round} · FIRST TO ${ROUND_LIMIT}`);
+    this.set('match-label', g.settings.mode === 'tdm' ? 'TIMED · NO KILL CAP' : `ROUND ${g.round} · FIRST TO ${ROUND_LIMIT}`);
     this.set('fps', `${Math.round(g.fps)} FPS`); this.set('difficulty-label', g.settings.difficulty.toUpperCase());
     this.set('health', String(p.health)); e['health-bar'].style.width = `${p.health}%`;
     e['health'].classList.toggle('low-health', p.health < 30);
@@ -543,7 +557,8 @@ export class UI {
   private scoreboardHTML(intermission = false) {
     const g = this.game;
     const teams = (['blue', 'red'] as const).map(team => `<section class="board-team"><div class="scoreboard-team ${team}-text"><span>${team.toUpperCase()} TEAM</span><span>${g.scores[team]}</span></div><div class="scoreboard-row board-labels"><span>OPERATOR</span><span>K</span><span>D</span><span>STATUS</span></div>${g.actors.filter(a => a.team === team).sort((a, b) => b.kills - a.kills).map(a => `<div class="scoreboard-row ${a === g.player ? 'is-you' : ''}"><span class="operator-name" ${a.profile ? `title="${profileLabel(a.profile)}" aria-label="${a.name}: ${profileLabel(a.profile)}"` : ''}>${a.name}${a === g.player ? ' <small>/ YOU</small>' : a.human ? ' <small>/ PLAYER</small>' : a.profile ? ` <small class="profile-badge">${a.profile.name}</small>` : ''}</span><span>${a.kills}</span><span>${a.deaths}</span><span class="${a.alive ? 'alive' : 'dead'}">${a.alive ? 'ACTIVE' : 'DOWN'}</span></div>`).join('')}</section>`).join('');
-    return `<div class="scoreboard-heading"><span>${g.arena.name} / ${g.settings.mode === 'tdm' ? 'TEAM DEATHMATCH' : 'ELIMINATION'}</span><span>LOCAL MATCH</span></div><h2>SQUAD STATUS</h2><div class="board-teams">${teams}</div>${intermission ? '' : '<p>HOLD TAB TO VIEW · RELEASE TO CLOSE</p>'}`;
+    const session = g.settings.autoRotate || g.completedMatches > 1 ? `<p class="session-totals">SESSION · ${g.completedMatches} MATCHES COMPLETE · BLUE ${g.sessionScores.blue + (g.screen === 'finished' ? 0 : g.scores.blue)} : ${g.sessionScores.red + (g.screen === 'finished' ? 0 : g.scores.red)} RED<br>Team totals accumulate ${g.settings.mode === 'tdm' ? 'kills' : 'round wins'}. Operator K/D is cumulative; match scores reset each map.</p>` : '';
+    return `<div class="scoreboard-heading"><span>${g.arena.name} / ${g.settings.mode === 'tdm' ? 'TEAM DEATHMATCH' : 'ELIMINATION'}</span><span>${g.network ? 'LAN' : 'LOCAL'} MATCH</span></div><h2>SQUAD STATUS</h2>${session}<div class="board-teams">${teams}</div>${intermission ? '' : '<p>HOLD TAB TO VIEW · RELEASE TO CLOSE</p>'}`;
   }
 
   private drawDamageNumbers() {
@@ -577,8 +592,10 @@ export class UI {
     const px = (x: number) => w / 2 + x * scale, pz = (z: number) => h / 2 + z * scale;
     for (const b of g.arena.boxes) {
       if (b.kind === 'beam') continue;
+      if (b.kind === 'floor') { ctx.fillStyle = '#26372e'; ctx.fillRect(px(b.x - b.w / 2), pz(b.z - b.d / 2), b.w * scale, b.d * scale); continue; }
       ctx.fillStyle = b.kind === 'crate' ? '#5a614e' : '#485449';
-      ctx.fillRect(px(b.x - b.w / 2), pz(b.z - b.d / 2), b.w * scale, b.d * scale);
+      ctx.save(); ctx.translate(px(b.x), pz(b.z)); ctx.rotate(-(b.rotY ?? 0));
+      ctx.fillRect(-b.w * scale / 2, -b.d * scale / 2, b.w * scale, b.d * scale); ctx.restore();
     }
     for (const actor of g.actors) {
       if (actor.team !== g.player.team || !actor.alive) continue;

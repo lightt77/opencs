@@ -5,6 +5,11 @@ export interface Point3 extends Point { y: number }
 
 // Direction is normalized; entry/exit are distances, including oblique thickness.
 export function rayBox(origin: Point3, direction: Point3, box: Box, range: number) {
+  if (box.rotY) {
+    const c = Math.cos(box.rotY), s = Math.sin(box.rotY);
+    return rayBox({ x: (origin.x - box.x) * c - (origin.z - box.z) * s, y: origin.y, z: (origin.x - box.x) * s + (origin.z - box.z) * c },
+      { x: direction.x * c - direction.z * s, y: direction.y, z: direction.x * s + direction.z * c }, { ...box, x: 0, z: 0, rotY: 0 }, range);
+  }
   let entry = 0, exit = range;
   for (const [o, d, center, half] of [[origin.x, direction.x, box.x, box.w / 2], [origin.y, direction.y, box.y, box.h / 2], [origin.z, direction.z, box.z, box.d / 2]]) {
     if (Math.abs(d) < 1e-8) {
@@ -31,7 +36,7 @@ export function penetration(weapon: WeaponId, hits: ReturnType<typeof coverHits>
   for (const hit of hits) {
     const wood = hit.box.kind === 'door' || hit.box.kind === 'crate';
     const cost = (hit.exit - hit.entry) * (wood ? 1 : 2.5);
-    if (mode === 'off' || !budget) return { multiplier: 0, stop: hit.entry };
+    if (hit.box.kind === 'floor' || mode === 'off' || !budget) return { multiplier: 0, stop: hit.entry };
     if (mode === 'walls') {
       // Ordinary walls are penetrable, but thickness/material and every layer cost damage.
       multiplier *= .65 * Math.exp(-cost / (budget * 8));

@@ -3,7 +3,7 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import { Actor } from './actor';
 import { Sound } from './audio';
 import { updateBot, type BotContext } from './bots';
-import { DEFAULTS, FIXED_DT, MATCH_SECONDS, PRIMARIES, ROUND_LIMIT, ROUND_SECONDS, TDM_LIMIT, WEAPONS, isGrenade, sanitizeWeapons, type Primary, type Settings, type Team, type WeaponId } from './config';
+import { DEFAULTS, FIXED_DT, MATCH_SECONDS, PRIMARIES, ROUND_LIMIT, WEAPONS, isGrenade, sanitizeWeapons, type MapId, type Primary, type Settings, type Team, type WeaponId } from './config';
 import { MAPS, type Arena } from './maps';
 import { angleDelta, clamp, damageAtRange, distance, groundVelocity, segmentCircle, shotSpread, type Point } from './math';
 import { disposeTree, weaponModel } from './models';
@@ -18,6 +18,8 @@ import { Radio } from './radio';
 import { drawProfiles, sanitizeProfiles } from './bot-profiles';
 import { Lan } from './lan';
 import { cleanControls, type Action, type Controls, type Operator, type Room } from './lan-protocol';
+import { randomMap } from './rotation';
+import { surfaceHeight } from './map-schema';
 
 export interface Kill { killer: string; victim: string; team: Team; weapon: WeaponId; head: boolean; time: number }
 interface Grenade { body: RAPIER.RigidBody; mesh: THREE.Object3D; owner: Actor; type: 'he' | 'flash' | 'smoke'; fuse: number }
@@ -56,6 +58,11 @@ export class Game {
   phaseTime = 3;
   round = 1;
   scores = { blue: 0, red: 0 };
+  sessionScores = { blue: 0, red: 0 };
+  completedMatches = 0;
+  rotationRemaining = 0;
+  nextMap?: MapId;
+  private forfeit = false;
   kills: Kill[] = [];
   damagePopups: DamagePopup[] = [];
   private nextDamageId = 0;
@@ -129,6 +136,9 @@ export class Game {
         actor.profile = drawProfiles(unused.length ? unused : this.settings.botProfiles, 1)[0];
         actor.brain.role = actor.profile.bravery === 'low' ? actor.profile.coop === 'high' ? 'hold' : 'flank' : 'push';
       }
+      if (this.lan.host && this.screen === 'finished' && !this.settings.botFill && !this.actors.some(a => a.team === actor.team && !this.inactive.has(a.id))) {
+        this.forfeit = true; this.stopRotation();
+      }
     };
     this.lan.onEnded = () => { if (this.network) this.toMenu(); };
   }
@@ -171,7 +181,8 @@ export class Game {
       this.view.scene.add(actor.model.root); return actor;
     });
     this.time = 0; this.round = 1; this.scores = { blue: 0, red: 0 }; this.kills = [];
-    this.remaining = settings.mode === 'tdm' ? MATCH_SECONDS : ROUND_SECONDS;
+    this.sessionScores = { blue: 0, red: 0 }; this.completedMatches = 0; this.rotationRemaining = 0; this.nextMap = undefined; this.forfeit = false;
+    this.remaining = settings.mode === 'tdm' ? settings.matchDuration : settings.roundDuration;
     this.phase = 'warmup'; this.phaseTime = settings.freezeTime; this.intel = {}; this.pendingFinish = undefined;
     this.resetActors(); this.screen = 'playing'; this.accumulator = 0;
     this.clearInput(); this.onScreenChange?.(); this.capture();
@@ -238,7 +249,7 @@ export class Game {
     if (this.screen !== 'loadout' || this.phase !== 'between' || !['ak', 'm4', 'awp'].includes(primary)) return false;
     if (PRIMARIES.some(id => this.settings.allowedWeapons.includes(id)) && !this.settings.allowedWeapons.includes(primary)) return false;
     this.player.primary = primary; this.settings.primary = primary;
-    this.round++; this.resetActors(); this.remaining = ROUND_SECONDS;
+    this.round++; this.resetActors(); this.remaining = this.settings.roundDuration;
     this.phase = 'warmup'; this.phaseTime = this.settings.freezeTime; this.screen = 'playing'; this.clearInput();
     this.onScreenChange?.(); this.capture(); return true;
   }
@@ -256,6 +267,35 @@ export class Game {
   private cancelGrenade() { this.grenadePrime = this.grenadeRelease = undefined; }
 
   private emptyControls(actor: Actor): Controls { return { keys: [], yaw: actor.yaw, pitch: actor.pitch, scope: 0, fire: false, trigger: false, jump: false, actions: [] }; }
+
+  private loadArena(map: MapId) {
+    this.clearGrenades(); this.smokes = []; this.remoteControls.clear(); this.events = [];
+    for (const mesh of this.replicaGrenades) { this.view.scene.remove(mesh); disposeTree(mesh); } this.replicaGrenades = [];
+    this.physics?.dispose();
+    this.settings.map = map; this.arena = MAPS[map]; this.nav = new Navigation(this.arena);
+    this.physics = new Physics(this.arena); this.view.build(this.arena);
+    this.spawnPools = { blue: spawnCandidates(this.nav, 'blue', false), red: spawnCandidates(this.nav, 'red', false) };
+    for (const a of this.actors) a.body = this.physics.character(this.arena[a.team][a.id % this.arena[a.team].length]);
+    this.resetActors();
+    for (const id of this.inactive) { const a = this.actors[id]; a.alive = false; a.body.enabled(false); }
+  }
+
+  private rotateMatch() {
+    if (!this.nextMap || (this.network && !this.lan.host)) return;
+    const map = this.nextMap; this.nextMap = undefined; this.rotationRemaining = 0;
+    this.loadArena(map);
+    this.round = 1; this.scores = { blue: 0, red: 0 }; this.kills = []; this.pendingFinish = undefined;
+    this.remaining = this.settings.mode === 'tdm' ? this.settings.matchDuration : this.settings.roundDuration;
+    this.phase = 'warmup'; this.phaseTime = this.settings.freezeTime; this.announcementTime = 0;
+    this.clearInput(); this.screen = document.pointerLockElement === this.view.canvas ? 'playing' : 'paused';
+    this.onScreenChange?.();
+  }
+
+  stopRotation() {
+    if (this.network && !this.lan.host) return;
+    this.nextMap = undefined; this.rotationRemaining = 0;
+    this.release(); this.onScreenChange?.();
+  }
 
   private startNetwork(room: Room, roster: Operator[]) {
     const local = roster.findIndex(a => a.member === this.lan.id);
@@ -290,6 +330,7 @@ export class Game {
 
   snapshot() {
     return {
+      map: this.arena.id, nextMap: this.nextMap, rotationRemaining: this.rotationRemaining, sessionScores: this.sessionScores, completedMatches: this.completedMatches,
       time: this.time, remaining: this.remaining, phase: this.phase, phaseTime: this.phaseTime, round: this.round, scores: this.scores,
       screen: this.screen === 'paused' ? 'playing' as const : this.screen, winner: this.winner,
       announcement: this.announcement, announcementTime: this.announcementTime, kills: this.kills,
@@ -308,6 +349,10 @@ export class Game {
 
   private restoreSnapshot(state: ReturnType<Game['snapshot']>) {
     this.netReceived = performance.now();
+    const changedMap = state.map !== this.arena.id || state.completedMatches !== this.completedMatches && state.screen === 'playing' && this.screen === 'finished';
+    if (changedMap) this.loadArena(state.map);
+    const changedRotation = this.nextMap !== state.nextMap;
+    this.nextMap = state.nextMap; this.rotationRemaining = state.rotationRemaining; this.sessionScores = state.sessionScores; this.completedMatches = state.completedMatches;
     const oldTime = this.time, oldRound = this.round, oldPhase = this.phase;
     this.time = state.time; this.remaining = state.remaining; this.phase = state.phase; this.phaseTime = state.phaseTime;
     this.round = state.round; this.scores = state.scores; this.winner = state.winner;
@@ -325,7 +370,7 @@ export class Game {
       a.body.crouched = crouched; a.body.grounded = grounded;
       if (a === this.player) {
         if (previousWeapon !== a.weapon) this.cancelGrenade();
-        if (alive && a.alive) { a.yaw = yaw; a.pitch = pitch; }
+        if (alive && a.alive && !changedMap) { a.yaw = yaw; a.pitch = pitch; }
         if (a.health < health) this.lastDamage = this.time;
         if (alive && !a.alive) {
           const kill = state.kills.find(k => k.victim === a.name), killer = this.actors.find(other => other.name === kill?.killer) ?? a;
@@ -345,7 +390,7 @@ export class Game {
       if (alive && a.alive && grounded && this.phase === 'live') {
         const moved = a.previousPosition.distanceTo(a.position);
         if (moved < 2) a.step += moved;
-        if (a.step >= footstepStride(a.sprinting, crouched)) { a.step = 0; this.sound.step(a === this.player ? undefined : a.position, this.arena.id === 'snow', a.sprinting, crouched); }
+        if (a.step >= footstepStride(a.sprinting, crouched)) { a.step = 0; this.sound.step(a === this.player ? undefined : a.position, this.arena.biome === 'snow', a.sprinting, crouched); }
       }
       a.model.animate(dt, { x: a.velocity.x, z: a.velocity.z }, a.alive, a.reload > 0, grounded, crouched, a.deathAge, a.deathHead || a.deathBlast, a.awpShotAge, a.throwAge);
     }
@@ -390,8 +435,10 @@ export class Game {
     });
     const desired = state.screen;
     if ((desired === 'finished' || desired === 'loadout') && this.screen !== desired) {
-      this.screen = desired; this.clearInput(); this.release(); this.onScreenChange?.();
-    } else if (desired === 'playing' && this.screen === 'loadout') { this.screen = 'paused'; this.onScreenChange?.(); }
+      this.screen = desired; this.clearInput(); if (!this.nextMap) this.release(); this.onScreenChange?.();
+    } else if (desired === 'playing' && (this.screen === 'loadout' || this.screen === 'finished')) {
+      this.screen = document.pointerLockElement === this.view.canvas ? 'playing' : 'paused'; this.onScreenChange?.();
+    } else if (changedRotation && this.screen === 'finished') this.onScreenChange?.();
   }
 
   private action(action: Action) {
@@ -414,6 +461,7 @@ export class Game {
 
   private input() {
     window.addEventListener('keydown', event => {
+      if (event.code === 'Escape' && this.screen === 'finished') { this.release(); return; }
       if (this.screen !== 'playing') return;
       if (['Tab', 'Space', 'ControlLeft', 'ControlRight', 'ArrowUp', 'ArrowDown'].includes(event.code)) event.preventDefault();
       this.keys.add(event.code);
@@ -472,9 +520,9 @@ export class Game {
     const dt = Math.min(.1, Math.max(0, (now - this.lastFrame) / 1000)); this.lastFrame = now;
     this.fps += ((1 / Math.max(dt, .001)) - this.fps) * .04;
     this.renderTime += dt;
-    if (this.screen === 'playing' && !this.network) {
+    if ((this.screen === 'playing' || this.screen === 'finished' && this.nextMap) && !this.network) {
       this.accumulator += dt;
-      while (this.screen === 'playing' && this.accumulator >= FIXED_DT) { this.update(FIXED_DT); this.accumulator -= FIXED_DT; }
+      while ((this.screen === 'playing' || this.screen === 'finished' && this.nextMap) && this.accumulator >= FIXED_DT) { this.update(FIXED_DT); this.accumulator -= FIXED_DT; }
       this.view.updateEffects(dt);
     } else { this.accumulator = 0; if (this.network) this.view.updateEffects(dt); }
     if (this.network && !this.lan.host) {
@@ -488,6 +536,13 @@ export class Game {
   }
 
   private update(dt: number) {
+    if (this.screen === 'finished') {
+      if (this.nextMap && (!this.network || this.lan.host)) {
+        this.rotationRemaining = Math.max(0, this.rotationRemaining - dt);
+        if (this.rotationRemaining <= 0) this.rotateMatch();
+      }
+      return;
+    }
     if (this.screen !== 'playing' && !(this.network && this.lan.host && this.screen === 'paused')) return;
     this.time += dt; this.announcementTime = Math.max(0, this.announcementTime - dt);
     this.damagePopups = this.damagePopups.filter(popup => this.time - popup.time < .95);
@@ -505,7 +560,10 @@ export class Game {
       if (this.phaseTime <= 0) {
         if (this.phase === 'between') {
           if (this.pendingFinish !== undefined) { this.finish(this.pendingFinish); this.pendingFinish = undefined; }
-          else { this.screen = 'loadout'; this.clearInput(); this.release(); this.onScreenChange?.(); }
+          else if (this.settings.autoRotate) {
+            this.round++; this.resetActors(); this.remaining = this.settings.roundDuration;
+            this.phase = 'warmup'; this.phaseTime = this.settings.freezeTime; this.clearInput();
+          } else { this.screen = 'loadout'; this.clearInput(); this.release(); this.onScreenChange?.(); }
         } else { this.phase = 'live'; this.announce(this.settings.mode === 'tdm' ? 'WEAPONS FREE' : `ROUND ${this.round} · ELIMINATE THE ENEMY`, 2); }
       }
     } else {
@@ -634,7 +692,7 @@ export class Game {
     const cover = coverHits(origin, direction, this.arena.boxes, spec.range).filter(h => h.entry < (hit?.distance ?? spec.range));
     const result = penetration(id, cover, this.settings.wallShots);
     // The floor is always solid, never a penetrable wall.
-    const floor = direction.y < -1e-8 ? -origin.y / direction.y : Infinity;
+    const floor = !this.arena.surface && direction.y < -1e-8 ? -origin.y / direction.y : Infinity;
     const hitDistance = Math.min(hit?.distance ?? spec.range, result.stop ?? Infinity, floor);
     const endpoint = origin.clone().addScaledVector(direction, hitDistance);
     if (this.network) this.events.push({ kind: 'shot', actor: actor.id, weapon: id, point: origin.toArray(), end: endpoint.toArray() });
@@ -707,7 +765,7 @@ export class Game {
     const t = clamp(actor.deathAge / .8, 0, 1);
     const flight = blastFlight(actor.deathAge);
     const desired = actor.deathOrigin.clone().addScaledVector(actor.deathDirection, actor.deathBlast ? flight.distance : (actor.deathHead ? .85 : .18) * t);
-    if (this.nav.clear(actor.position, desired, actor.deathOrigin.y + .45, .35)) {
+    if (this.nav.clear(actor.position, desired, this.arena.surface ? .45 : actor.deathOrigin.y + .45, .35)) {
       actor.position.x = desired.x; actor.position.z = desired.z;
     }
     actor.position.y = actor.deathOrigin.y + (actor.deathBlast ? flight.height : actor.deathHead ? Math.sin(t * Math.PI) * .75 : 0);
@@ -756,27 +814,27 @@ export class Game {
       const p = grenade.body.translation(); grenade.mesh.position.set(p.x, p.y, p.z);
       const q = grenade.body.rotation(); grenade.mesh.quaternion.set(q.x, q.y, q.z, q.w);
       if (grenade.fuse > 0) continue;
-      const position = new THREE.Vector3(p.x, Math.max(.1, p.y), p.z);
+      const position = new THREE.Vector3(p.x, Math.max((surfaceHeight(this.arena, p) ?? p.y - .1) + .1, p.y), p.z);
       if (grenade.type === 'he') {
         this.view.explosion(position); this.sound.explosion(position);
         if (this.network) this.events.push({ kind: 'explosion', point: position.toArray() });
         for (const actor of this.actors) {
           if (!actor.alive || (actor.team === grenade.owner.team && actor !== grenade.owner)) continue;
           const d = actor.eye().distanceTo(position);
-          if (d < 8 && this.nav.clear(position, actor.position, .7)) this.damage(actor, Math.round(100 * (1 - d / 8)), grenade.owner, 'he', false, position);
+          if (d < 8 && (this.arena.surface ? this.unobstructed(position, actor.eye()) : this.nav.clear(position, actor.position, .7))) this.damage(actor, Math.round(100 * (1 - d / 8)), grenade.owner, 'he', false, position);
         }
       } else if (grenade.type === 'flash') {
         this.view.explosion(position); this.sound.flash(position);
         if (this.network) this.events.push({ kind: 'flash', point: position.toArray() });
         for (const actor of this.actors) {
           const d = actor.eye().distanceTo(position);
-          if (!actor.alive || d > 21 || !this.nav.clear(position, actor.position)) continue;
+          if (!actor.alive || d > 21 || !(this.arena.surface ? this.unobstructed(position, actor.eye()) : this.nav.clear(position, actor.position))) continue;
           const angle = Math.atan2(actor.position.x - position.x, actor.position.z - position.z);
           const facing = Math.abs(angleDelta(actor.yaw, angle)) < 1.6;
           actor.flash = Math.max(actor.flash, (1 - d / 24) * (facing ? 4 : 1.2));
         }
       } else {
-        position.y = .1; this.view.smoke(position); this.smokes.push({ point: position, life: 12 });
+        position.y = (surfaceHeight(this.arena, position) ?? p.y) + .1; this.view.smoke(position); this.smokes.push({ point: position, life: 12 });
         if (this.network) this.events.push({ kind: 'smoke', point: position.toArray() });
       }
       this.physics!.world.removeRigidBody(grenade.body); this.view.scene.remove(grenade.mesh); disposeTree(grenade.mesh); this.grenades.splice(i, 1);
@@ -794,7 +852,12 @@ export class Game {
     const origin = new THREE.Vector3(a.x, (a as Partial<THREE.Vector3>).y ?? 1.4, a.z);
     const end = new THREE.Vector3(b.x, (b as Partial<THREE.Vector3>).y ?? 1.4, b.z);
     const direction = end.sub(origin), length = direction.length();
-    return !coverHits(origin, direction.normalize(), this.arena.boxes, length).length && !this.smokes.some(smoke => segmentCircle(a, b, smoke.point, 4.2));
+    return !coverHits(origin, direction.normalize(), this.arena.boxes, length).length && !this.smokes.some(smoke => Math.abs((smoke.point.y ?? 0) - (origin.y + (b.y ?? 1.4)) / 2) < 4.2 && segmentCircle(a, b, smoke.point, 4.2));
+  }
+
+  private unobstructed(a: THREE.Vector3, b: THREE.Vector3) {
+    const direction = b.clone().sub(a), length = direction.length();
+    return !coverHits(a, direction.normalize(), this.arena.boxes, length).length;
   }
 
   private hear(actor: Actor, radius: number) {
@@ -808,7 +871,7 @@ export class Game {
 
   private footstep(actor: Actor) {
     const quiet = actor.body.crouched;
-    this.sound.step(actor === this.player ? undefined : actor.position, this.arena.id === 'snow', actor.sprinting, quiet);
+    this.sound.step(actor === this.player ? undefined : actor.position, this.arena.biome === 'snow', actor.sprinting, quiet);
     this.hear(actor, quiet ? 3 : actor.sprinting ? 23 : 13);
   }
 
@@ -822,12 +885,12 @@ export class Game {
       const available = (team: Team) => this.actors.some(a => a.team === team && !this.inactive.has(a.id));
       if (!available('blue') || !available('red')) {
         const winner = available('blue') ? 'blue' : 'red';
-        this.pendingFinish = winner; this.phase = 'between'; this.phaseTime = this.settings.roundEndDelay;
+        this.forfeit = true; this.pendingFinish = winner; this.phase = 'between'; this.phaseTime = this.settings.roundEndDelay;
         this.victoryRadio(winner); this.announce(`${winner.toUpperCase()} WINS · OPPONENTS LEFT`, this.phaseTime + .1); this.clearInput(); return;
       }
     }
     if (this.settings.mode === 'tdm') {
-      if (this.scores.blue >= TDM_LIMIT || this.scores.red >= TDM_LIMIT || this.remaining <= 0) {
+      if (this.remaining <= 0) {
         this.pendingFinish = this.scores.blue === this.scores.red ? 'draw' : this.scores.blue > this.scores.red ? 'blue' : 'red';
         this.phase = 'between'; this.phaseTime = this.settings.roundEndDelay;
         this.victoryRadio(this.pendingFinish);
@@ -854,7 +917,11 @@ export class Game {
   }
 
   private finish(winner: Team | 'draw') {
-    this.winner = winner; this.screen = 'finished'; this.clearInput(); this.release(); this.onScreenChange?.();
+    this.winner = winner; this.screen = 'finished'; this.clearInput();
+    this.sessionScores.blue += this.scores.blue; this.sessionScores.red += this.scores.red; this.completedMatches++;
+    if (this.settings.autoRotate && !this.forfeit) { this.nextMap = randomMap(this.arena.id); this.rotationRemaining = this.settings.rotationDelay; }
+    else this.release();
+    this.onScreenChange?.();
   }
 
   private announce(text: string, duration: number) { this.announcement = text; this.announcementTime = duration; }

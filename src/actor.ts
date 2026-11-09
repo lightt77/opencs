@@ -57,7 +57,7 @@ export class Actor {
   profile?: BotProfile;
   model: Soldier;
 
-  constructor(readonly id: number, readonly name: string, readonly team: Team, public human: boolean, primary: Primary, readonly body: CharacterBody) {
+  constructor(readonly id: number, readonly name: string, readonly team: Team, public human: boolean, primary: Primary, public body: CharacterBody) {
     this.primary = primary; this.weapon = primary;
     this.model = new Soldier(team, name, primary);
     this.model.label.userData.enabled = team === 'blue';

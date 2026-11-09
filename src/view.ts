@@ -3,6 +3,8 @@ import type { Arena } from './maps';
 import type { WeaponId } from './config';
 import { block, disposeTree, weaponModel } from './models';
 import { animateBolt, awpAction } from './weapon-animation';
+import { BIOMES } from './biomes';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 interface Effect { object: THREE.Object3D; life: number; total: number; grow?: number }
 
@@ -17,6 +19,7 @@ export class View {
   weapon = new THREE.Group();
   private effects: Effect[] = [];
   private sun: THREE.DirectionalLight;
+  private ambient: THREE.HemisphereLight;
   private snow?: THREE.Points;
   private currentWeapon?: WeaponId;
   private width = 1;
@@ -33,7 +36,7 @@ export class View {
     this.renderer.autoClear = false;
     this.camera.rotation.order = 'YXZ';
     this.scene.add(this.level);
-    this.scene.add(new THREE.HemisphereLight(0xe3ebdf, 0x726e5e, 2.1));
+    this.ambient = new THREE.HemisphereLight(0xe3ebdf, 0x726e5e, 2.1); this.scene.add(this.ambient);
     this.sun = new THREE.DirectionalLight(0xffedce, 3);
     this.sun.position.set(-24, 40, -17); this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
@@ -56,6 +59,8 @@ export class View {
   build(arena: Arena) {
     this.clearEffects(); disposeTree(this.level); this.level.clear(); this.solids = [];
     this.snow = undefined;
+    const biome = BIOMES[arena.biome], snowy = arena.biome === 'snow';
+    this.sun.color.setHex(biome.sun); this.ambient.color.setHex(biome.ambient); this.ambient.groundColor.setHex(arena.ground);
     this.scene.background = new THREE.Color(arena.sky);
     this.scene.fog = new THREE.Fog(arena.fog, arena.fogNear ?? 35, arena.viewDistance ?? 115);
     this.camera.far = Math.max(180, (arena.viewDistance ?? 115) + 100); this.camera.updateProjectionMatrix();
@@ -64,29 +69,35 @@ export class View {
     this.sun.position.set(-extent * .36, extent * .61, -extent * .26);
     Object.assign(this.sun.shadow.camera, { left: -shadowReach, right: shadowReach, top: shadowReach, bottom: -shadowReach, far: extent * 2 });
     this.sun.shadow.camera.updateProjectionMatrix();
-    const texture = this.surfaceTexture(arena.id === 'snow');
+    const texture = this.surfaceTexture(snowy);
     const floorTexture = texture.clone(); floorTexture.repeat.set(arena.width / 4, arena.depth / 4);
     floorTexture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
     const floorMat = new THREE.MeshStandardMaterial({ color: arena.ground, map: floorTexture, roughness: 1 });
-    const floor = block(this.level, [arena.width, .2, arena.depth], [0, -.1, 0], floorMat);
-    floor.castShadow = false; this.solids.push(floor);
+    if (!arena.surface) {
+      const floor = block(this.level, [arena.width, .2, arena.depth], [0, -.1, 0], floorMat);
+      floor.castShadow = false; this.solids.push(floor);
+    }
     const walls = new THREE.MeshStandardMaterial({ color: arena.wall, map: texture, roughness: .95 });
     const trim = new THREE.MeshStandardMaterial({ color: arena.accent, roughness: .95 });
-    const crates = new THREE.MeshStandardMaterial({ color: arena.id === 'snow' ? 0x64818a : 0x82734f, roughness: .9 });
-    const seam = new THREE.MeshStandardMaterial({ color: arena.id === 'snow' ? 0x425b62 : 0x584e36 });
+    const crates = new THREE.MeshStandardMaterial({ color: snowy ? 0x64818a : 0x82734f, roughness: .9 });
+    const seam = new THREE.MeshStandardMaterial({ color: snowy ? 0x425b62 : 0x584e36 });
+    const colored = new Map<number, THREE.MeshStandardMaterial>();
     for (const b of arena.boxes) {
-      const mat = b.color ? new THREE.MeshStandardMaterial({ color: b.color }) : b.kind === 'crate' ? crates : walls;
+      if (b.color && !colored.has(b.color)) colored.set(b.color, new THREE.MeshStandardMaterial({ color: b.color }));
+      const mat = b.color ? colored.get(b.color)! : b.kind === 'floor' ? floorMat : b.kind === 'crate' ? crates : walls;
       const mesh = block(this.level, [b.w, b.h, b.d], [b.x, b.y, b.z], mat); this.solids.push(mesh);
+      mesh.rotation.y = b.rotY ?? 0;
+      if (b.rotY) continue; // Avoid unrotated trim on rotated collision props.
       if (b.kind === 'crate') {
         for (const y of [-b.h * .35, b.h * .35]) block(this.level, [b.w + .025, .07, b.d + .025], [b.x, b.y + y, b.z], seam);
         block(this.level, [.07, b.h + .025, b.d + .025], [b.x, b.y, b.z], seam);
       } else if (b.kind === 'door') {
-        for (const height of [.6, 1.6, 2.6]) block(this.level, [b.w + .02, .09, b.d + .045], [b.x, height, b.z], seam);
+        for (const height of [.6, 1.6, 2.6].filter(h => h < b.h)) block(this.level, [b.w + .02, .09, b.d + .045], [b.x, b.y - b.h / 2 + height, b.z], seam);
         block(this.level, [.05, b.h, b.d + .025], [b.x, b.y, b.z], seam);
       } else if (b.kind === 'building') {
         block(this.level, [b.w + .22, .2, b.d + .22], [b.x, b.y + b.h / 2, b.z], trim);
         block(this.level, [b.w + .08, .28, b.d + .08], [b.x, .18, b.z], trim);
-        if (arena.id === 'snow') block(this.level, [b.w + .35, .14, b.d + .35], [b.x, b.h + .16, b.z], new THREE.MeshStandardMaterial({ color: 0xe8edef }));
+        if (snowy) block(this.level, [b.w + .35, .14, b.d + .35], [b.x, b.y + b.h / 2 + .16, b.z], floorMat);
         if (b.w > 5 && b.d > 5) {
           for (const side of [-1, 1]) {
             const faceZ = b.z + side * (b.d / 2 + .025);
@@ -102,17 +113,19 @@ export class View {
       }
     }
     // Inlaid floor seams and spawn-zone markings keep the simple geometry grounded.
-    const lineMat = new THREE.MeshStandardMaterial({ color: arena.id === 'snow' ? 0xb9ccd5 : arena.accent, transparent: true, opacity: .18 });
+    const lineMat = new THREE.MeshStandardMaterial({ color: snowy ? 0xb9ccd5 : arena.accent, transparent: true, opacity: .18 });
     const grid = extent > 100 ? 20 : 5;
-    for (let z = -Math.floor(arena.depth / 2 / grid) * grid; z < arena.depth / 2; z += grid) block(this.level, [arena.width - 1, .006, .025], [0, .006, z], lineMat);
-    for (let x = -Math.floor(arena.width / 2 / grid) * grid; x < arena.width / 2; x += grid) block(this.level, [.025, .006, arena.depth - 1], [x, .006, 0], lineMat);
-    for (const [z, color, label] of [[arena.blue[0].z - 1, 0x70b9d5, 'BLUE / 01'], [arena.red[0].z + 1, 0xdb8065, 'RED / 02']] as const) {
+    if (!arena.surface) {
+      for (let z = -Math.floor(arena.depth / 2 / grid) * grid; z < arena.depth / 2; z += grid) block(this.level, [arena.width - 1, .006, .025], [0, .006, z], lineMat);
+      for (let x = -Math.floor(arena.width / 2 / grid) * grid; x < arena.width / 2; x += grid) block(this.level, [.025, .006, arena.depth - 1], [x, .006, 0], lineMat);
+    }
+    for (const [p, color, label] of [[arena.blue[0], 0x70b9d5, 'BLUE / 01'], [arena.red[0], 0xdb8065, 'RED / 02']] as const) {
       const marking = new THREE.MeshStandardMaterial({ color, transparent: true, opacity: .5 });
-      block(this.level, [Math.min(70, arena.width * .36), .01, .15], [0, .015, z], marking);
-      this.sign(label, color, 0, 2.6, Math.sign(z) * (arena.depth / 2 - .56), z > 0 ? Math.PI : 0);
+      block(this.level, [10, .01, .15], [p.x, (p.y ?? 0) + .015, p.z], marking);
+      if (!arena.surface) this.sign(label, color, 0, 2.6, Math.sign(p.z) * (arena.depth / 2 - .56), p.z > 0 ? Math.PI : 0);
     }
     this.sign(arena.name, arena.accent, -arena.width / 2 + .57, 3.7, 0, Math.PI / 2);
-    for (const site of arena.sites ?? []) this.floorLabel(site.label, site.x, site.z);
+    for (const site of arena.sites ?? []) this.floorLabel(site.label, site.x, site.z, site.y);
     if (arena.id === 'dust') {
       this.sign('A  →  LONG', 0xc89964, 15.95, 2.5, 19, -Math.PI / 2);
       this.sign('←  B  TUNNELS', 0xc89964, -15.95, 2.5, 23, Math.PI / 2);
@@ -121,11 +134,42 @@ export class View {
     if (arena.id === 'longshot') {
       for (let z = -180; z <= 180; z += 30) block(this.level, [.16, .012, 4], [0, .018, z], trim);
     }
-    if (arena.id === 'snow') {
+    if (snowy) {
       const geo = new THREE.BufferGeometry(); const data = new Float32Array(900 * 3);
-      for (let i = 0; i < data.length; i += 3) { data[i] = (Math.random() - .5) * 58; data[i + 1] = Math.random() * 16; data[i + 2] = (Math.random() - .5) * 66; }
+      for (let i = 0; i < data.length; i += 3) { data[i] = (Math.random() - .5) * arena.width; data[i + 1] = Math.random() * 16; data[i + 2] = (Math.random() - .5) * arena.depth; }
       geo.setAttribute('position', new THREE.BufferAttribute(data, 3));
       this.snow = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: .055, transparent: true, opacity: .65 })); this.level.add(this.snow);
+    }
+    // Non-colliding scenery is strictly outside the playable perimeter.
+    if (['jungle', 'forest', 'canyon', 'coast'].includes(arena.biome) && !arena.surface) {
+      const bark = new THREE.MeshStandardMaterial({ color: 0x675441 });
+      const leaves = new THREE.MeshStandardMaterial({ color: arena.biome === 'jungle' ? 0x3a6547 : 0x38594b });
+      for (let i = 0; i < 28; i++) {
+        const side = i % 2 ? -1 : 1, x = side * (arena.width / 2 + 4 + i % 3 * 2), z = (i / 28 - .5) * arena.depth;
+        if (arena.biome === 'canyon') block(this.level, [6 + i % 4, 8 + i % 5, 8], [x, 3, z], walls);
+        else if (arena.biome === 'coast') block(this.level, [2, 7, 2], [x, 3, z], trim);
+        else { block(this.level, [.7, 8, .7], [x, 4, z], bark); block(this.level, [4 + i % 3, 5, 4 + i % 3], [x, 8, z], leaves); }
+      }
+    }
+    this.batchLevel();
+  }
+
+  private batchLevel() {
+    // Many small stair tiles still render in a handful of material batches.
+    this.level.updateMatrixWorld(true);
+    const groups = new Map<THREE.Material, THREE.Mesh[]>();
+    for (const child of this.level.children) if (child instanceof THREE.Mesh && !Array.isArray(child.material) && !child.material.transparent) {
+      const list = groups.get(child.material) ?? []; list.push(child); groups.set(child.material, list);
+    }
+    this.solids = [];
+    for (const [material, meshes] of groups) {
+      const geometries = meshes.map(mesh => mesh.geometry.clone().applyMatrix4(mesh.matrix));
+      const geometry = mergeGeometries(geometries);
+      geometries.forEach(g => g.dispose());
+      if (!geometry) continue;
+      for (const mesh of meshes) { this.level.remove(mesh); mesh.geometry.dispose(); }
+      const batch = new THREE.Mesh(geometry, material); batch.castShadow = batch.receiveShadow = true;
+      this.level.add(batch); this.solids.push(batch);
     }
   }
 
@@ -151,13 +195,13 @@ export class View {
     mesh.position.set(x, y, z); mesh.rotation.y = rotation; this.level.add(mesh);
   }
 
-  private floorLabel(text: string, x: number, z: number) {
+  private floorLabel(text: string, x: number, z: number, y = 0) {
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
     const ctx = canvas.getContext('2d')!;
     ctx.strokeStyle = '#a25435'; ctx.lineWidth = 8; ctx.strokeRect(12, 12, 232, 232);
     ctx.fillStyle = '#a25435'; ctx.font = 'bold 180px monospace'; ctx.textAlign = 'center'; ctx.fillText(text, 128, 190);
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, opacity: .8, depthWrite: false }));
-    mesh.rotation.x = -Math.PI / 2; mesh.position.set(x, .025, z); this.level.add(mesh);
+    mesh.rotation.x = -Math.PI / 2; mesh.position.set(x, y + .025, z); this.level.add(mesh);
   }
 
   equip(id: WeaponId) {

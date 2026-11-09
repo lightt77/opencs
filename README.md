@@ -62,7 +62,7 @@ The application cannot bypass Wi-Fi isolation, OS permissions, or a firewall. Di
 ## Scope
 
 - Configurable 1–10 operators per team (default five-on-five): solo bots, LAN players only, or LAN players plus bots.
-- Team deathmatch and round-based elimination, without an economy or bomb objective.
+- Time-based team deathmatch (no kill cap) and round-based elimination, without an economy or bomb objective.
 - Dust II: Dust2-inspired routing with Long A/pit, short/catwalk, mid double doors, covered B tunnels, A/B landmarks, and defender-side rotations. This is a compact, single-level layout adaptation using original geometry—not an exact scale/elevation replica. A/B are landmarks, not bomb objectives. Snow and India remain compact original arenas. Longshot Range is a 320 × 420 m open sniper arena with 370 m spawn sightlines and scattered flank cover.
 - AK, M4, AWP, pistol, knife, HE, flash, and smoke.
 - Ten configurable bot personalities with individual skill, teamwork and bravery, scaled by easy / medium / hard difficulty. Bots use perception, last-known enemy positions, cover retreats, quiet approaches, sprinting rotations, and physical jumps onto reachable low crates.
@@ -70,9 +70,44 @@ The application cannot bypass Wi-Fi isolation, OS permissions, or a firewall. Di
 - Locally saved preferences; entirely local matches.
 - Movement-speed and jump-gravity sliders, optional double jump, three built-in gunshot styles, and locally imported custom gunshots.
 - Floating damage numbers for your hits, including grenades; gold headshot numbers. Numbers show actual health removed, capped at the victim's remaining health.
-- Elimination intermissions show all operators' cumulative kills/deaths and both teams' win counts. Choose an allowed primary and explicitly start the next round (host in LAN); scores persist.
+- Elimination intermissions show all operators' cumulative kills/deaths and both teams' win counts. In manual mode choose an allowed primary and explicitly start the next round (host in LAN); auto mode advances rounds without a loadout interruption.
 - Configurable weapon restrictions for both teams, up to three carried grenades total, charged throws, and automatic deathmatch ammunition resupply.
 - Configurable wall penetration, two-stage AWP optics (no unscoped AWP crosshair), positional footsteps, event-driven team radio, and animated deaths with a killer-camera pan.
+
+### Maps and biomes
+
+Twelve bundled maps are available in solo and LAN. Filter the battlefield browser by biome; each layout has its own cover, routes, spawn pools and minimap. Biomes independently define palette, lighting, environment scenery and snow effects. Scenery outside the perimeter is decorative; playable cover has matching collision. Static geometry is batched by material to keep draw calls low.
+
+| Arena | Biome | Layout |
+| --- | --- | --- |
+| Dust II | Desert | Existing compact Long / Mid / Tunnels adaptation |
+| Snow Outpost | Snow | Compact central depot and outer flanks |
+| India Court | Urban | Open courtyard and column sightlines |
+| Longshot Range | Forest | Giant open sniper proving ground |
+| Dust II Blockout | Desert | Supplied JSON regions, elevated sites, lowered mid/pit and covered tunnels |
+| Canopy Ruins | Jungle | Central temple, broken columns and sheltered outer routes |
+| Tideline Dockyard | Coastal | Staggered containers, loading yard and long shipping lanes |
+| Alpine Relay | Snow | Offset relay houses and exposed crossings |
+| Redrock Pass | Canyon | Offset mesas, winding passes and long outer angles |
+| Old Quarter | Urban | Asymmetric alleys and interconnected courtyards |
+| Ironworks Foundry | Industrial | Machinery lanes, overhead gantries and tight crossings |
+| Pinewatch Camp | Forest | Cabins, timber cover and broad woodland flanks |
+
+**Bundled JSON blockout:** `src/maps/dust2-blockout.json` preserves the supplied specification. `src/map-schema.ts` validates it and deterministically compiles region floors, perimeter walls, tunnel ceilings, simple composite props, rotated collision/cover, spawn zones and named areas. X/Z are horizontal; Y is up. Region X/Z are centers and Y is floor elevation. Prop positions are bottom-centers, sizes are full extents, and `rotY` is radians. `unitScale` scales dimensions into metres; the source X/Z bounds are recentered for the engine.
+
+This is an **interpreted blockout, not an exact Dust2 recreation**: missing connections are inferred as 5m-wide L-shaped corridors. Floors are sampled at 0.5m resolution; elevation boundaries are adjusted into reachable 0.2m steps. Ramp/stair cover entries are treated as traversal hints rather than solid lane-blocking boxes. Jump/drop/window connections receive accessible walking alternatives instead of requiring enhanced jump settings. Navigation follows the same heightfield and checks floor continuity; floors block bullets at every elevation. Window frames/scaffolds and vehicles are simplified composite boxes. Tags such as `buyzone` and `bombsite` remain metadata and landmarks, not new objectives. This compiler supports one walkable floor per X/Z cell, **not stacked, overlapping storeys**. There is no runtime JSON upload or LAN map transfer: new definitions are bundled into the build.
+
+### Timed matches and uninterrupted auto play
+
+- **Settings → Round Timing → Deathmatch Duration:** 30 seconds–60 minutes, default six minutes. Only the playing clock determines a normal deathmatch finish; scores can exceed 40. Most team kills at timeout wins; ties draw. Start freezes and end buffers are separate from playing time.
+- **Elimination Round Duration:** 15–600 seconds, default 100. Existing elimination and match-win rules remain unchanged.
+- Enable **Auto Map Rotation** in Mission Setup or Settings. After a match, results and the scoreboard remain visible for the **Scoreboard / Map Switch Delay** (3–30 seconds, default eight), then a random **different** bundled map starts automatically with the same mode, rules, teams, operators and current loadouts. Elimination also advances intermediate rounds automatically, retaining the selected primary.
+- Each new map resets its **match** score, clock, round, lives and ammunition. The scoreboard separately accumulates **session team totals** (kills in deathmatch, round wins in elimination) and each operator's kills/deaths across maps. Session totals are in memory and reset when starting a fresh session; leaving is not a persistent career record.
+- Mouse capture is retained during auto results for seamless continuation. **Esc** releases the mouse so you can stop rotation or leave. If capture was released, the next map shows Resume rather than attempting pointer lock without a gesture; solo waits for that click. LAN simulation continues while anyone's mouse is released.
+- LAN rotation is host-authoritative: snapshots carry the map, next-map countdown and session scores. Guests do not choose maps or advance timers. The room stays intact, departed slots remain bots/inactive according to bot-fill rules, and a human-only team forfeit stops rotation. Host departure still closes the room. No mid-session joining, reconnection or host migration is added.
+- Auto mode defaults **off**. The old explicit rematch and elimination loadout flow remains available. In auto results the host/solo player can choose **Stop Auto Rotation**; any player can leave normally.
+
+Pre-feature checkpoint: annotated Git tag **`v0.2.1`** points to the LAN-diagnostics baseline (`22f18bb`), before the map/rotation changes. It does not move the older release tags.
 
 ## Controls
 
@@ -183,6 +218,8 @@ Fonts are bundled locally (Barlow and Barlow Condensed, SIL Open Font License vi
 | `src/game.ts` | Fixed-step simulation, input, combat, grenades, scoring, lifecycle |
 | `src/actor.ts`, `src/bots.ts` | Operator state and perception-driven bot decisions |
 | `src/maps.ts`, `src/navigation.ts` | Arena definitions, grid A*, route smoothing, sightlines |
+| `src/biomes.ts`, `src/map-schema.ts`, `src/maps/dust2-blockout.json` | Reusable biomes, validated JSON compilation, original blockout source and floor heightfield |
+| `src/rotation.ts` | Random map selection without immediate repeats |
 | `src/physics.ts` | Rapier world, kinematic characters, grenade dynamics |
 | `src/view.ts`, `src/models.ts` | Environment, character rigs, weapon models, effects |
 | `src/ui.ts`, `src/style.css` | Lobby, HUD, settings, pause, results |

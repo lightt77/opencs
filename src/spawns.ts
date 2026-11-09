@@ -9,7 +9,7 @@ export function spawnCandidates(nav: Navigation, team: Team, roundStart: boolean
     if (!nav.walkable[i]) continue;
     const p = nav.point(i);
     // Round starts retain opposite sides but spread across their rear quarter.
-    if (roundStart && p.z * sign < nav.arena.depth * .29) continue;
+    if (roundStart && (nav.arena.surface ? !nav.arena[team].some(s => distance(s, p) < 12) : p.z * sign < nav.arena.depth * .29)) continue;
     if (nav.clear(p, p, .7, .65) && nav.clear(p, p, 1.7, .4)) points.push(p);
   }
   return points.length ? points : nav.arena[team];
