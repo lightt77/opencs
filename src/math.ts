@@ -1,5 +1,5 @@
 export interface Point { x: number; z: number }
-export interface Box { x: number; y: number; z: number; w: number; h: number; d: number; color?: number; kind?: 'wall' | 'crate' | 'building' | 'beam' }
+export interface Box { x: number; y: number; z: number; w: number; h: number; d: number; color?: number; kind?: 'wall' | 'crate' | 'building' | 'beam' | 'door' }
 export const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 export const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.z - b.z);

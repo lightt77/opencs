@@ -79,6 +79,9 @@ export class View {
       if (b.kind === 'crate') {
         for (const y of [-b.h * .35, b.h * .35]) block(this.level, [b.w + .025, .07, b.d + .025], [b.x, b.y + y, b.z], seam);
         block(this.level, [.07, b.h + .025, b.d + .025], [b.x, b.y, b.z], seam);
+      } else if (b.kind === 'door') {
+        for (const height of [.6, 1.6, 2.6]) block(this.level, [b.w + .02, .09, b.d + .045], [b.x, height, b.z], seam);
+        block(this.level, [.05, b.h, b.d + .025], [b.x, b.y, b.z], seam);
       } else if (b.kind === 'building') {
         block(this.level, [b.w + .22, .2, b.d + .22], [b.x, b.y + b.h / 2, b.z], trim);
         block(this.level, [b.w + .08, .28, b.d + .08], [b.x, .18, b.z], trim);
@@ -108,6 +111,12 @@ export class View {
       this.sign(label, color, 0, 2.6, Math.sign(z) * (arena.depth / 2 - .56), z > 0 ? Math.PI : 0);
     }
     this.sign(arena.name, arena.accent, -arena.width / 2 + .57, 3.7, 0, Math.PI / 2);
+    for (const site of arena.sites ?? []) this.floorLabel(site.label, site.x, site.z);
+    if (arena.id === 'dust') {
+      this.sign('A  →  LONG', 0xc89964, 15.95, 2.5, 19, -Math.PI / 2);
+      this.sign('←  B  TUNNELS', 0xc89964, -15.95, 2.5, 23, Math.PI / 2);
+      this.sign('MID  /  CT', 0xc89964, -6.95, 2.5, 0, Math.PI / 2);
+    }
     if (arena.id === 'longshot') {
       for (let z = -180; z <= 180; z += 30) block(this.level, [.16, .012, 4], [0, .018, z], trim);
     }
@@ -139,6 +148,15 @@ export class View {
     ctx.fillStyle = '#e9e8d7'; ctx.font = 'bold 42px monospace'; ctx.textAlign = 'center'; ctx.fillText(text, 256, 80);
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(5, 1.25), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(canvas), roughness: 1 }));
     mesh.position.set(x, y, z); mesh.rotation.y = rotation; this.level.add(mesh);
+  }
+
+  private floorLabel(text: string, x: number, z: number) {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
+    const ctx = canvas.getContext('2d')!;
+    ctx.strokeStyle = '#a25435'; ctx.lineWidth = 8; ctx.strokeRect(12, 12, 232, 232);
+    ctx.fillStyle = '#a25435'; ctx.font = 'bold 180px monospace'; ctx.textAlign = 'center'; ctx.fillText(text, 128, 190);
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, opacity: .8, depthWrite: false }));
+    mesh.rotation.x = -Math.PI / 2; mesh.position.set(x, .025, z); this.level.add(mesh);
   }
 
   equip(id: WeaponId) {

@@ -6,6 +6,8 @@ export interface Arena {
   width: number; depth: number; sky: number; fog: number; ground: number; wall: number; accent: number;
   boxes: Box[]; routes: Point[]; blue: Point[]; red: Point[];
   navCell?: number; viewDistance?: number; fogNear?: number; sniperSight?: number; scopeFov?: number;
+  areas?: Array<Point & { name: string; radius: number }>;
+  sites?: Array<Point & { label: string }>;
 }
 
 const box = (x: number, z: number, w: number, d: number, h = 4.8, kind: Box['kind'] = 'building', color?: number): Box => ({ x, y: h / 2, z, w, d, h, kind, color });
@@ -15,19 +17,41 @@ const spawns = (z: number): Point[] => [0, -8, 8, -4, 4].map(x => ({ x, z }));
 
 export const MAPS: Record<MapId, Arena> = {
   dust: {
-    id: 'dust', name: 'DUST YARD', subtitle: 'SUN-BAKED / THREE LANES',
-    description: 'Warm stone. Tight tunnels. A dangerous mid crossing.',
-    width: 58, depth: 66, sky: 0xc6c4b0, fog: 0xc9c1a5, ground: 0xb9a27a, wall: 0xc8af83, accent: 0x8f6650,
+    id: 'dust', name: 'DUST II', subtitle: 'CLASSIC ROUTES / LONG · MID · TUNNELS',
+    description: 'Dust2-inspired routing: Long A and pit, short/catwalk, mid double doors, B tunnels, and a defender-side A/B rotation.',
+    width: 80, depth: 88, sky: 0xc6c4b0, fog: 0xc9c1a5, ground: 0xb9a27a, wall: 0xc8af83, accent: 0x8f6650,
+    viewDistance: 150, fogNear: 60,
     boxes: [
-      ...bounds(58, 66), box(-13, -14, 12, 15), box(13, -14, 12, 15, 5.5),
-      box(-13, 14, 12, 15, 5.5), box(13, 14, 12, 15),
-      crate(0, 0, 5, 3, 1.3), crate(-23, -4, 2.4, 3.5, 2.1), crate(23, 5, 2.4, 3.5, 2.1),
-      crate(-3, -25, 2, 2, 1.2), crate(4, 24, 2, 2, 1.2), crate(-13, 0, 3, 2, 1.8), crate(13, 0, 3, 2, 1.8),
-      { x: 0, y: 4.5, z: -7, w: 14, h: 1.4, d: 1.5, kind: 'beam' },
-      { x: 0, y: 4.5, z: 7, w: 14, h: 1.4, d: 1.5, kind: 'beam' },
+      ...bounds(80, 88),
+      // West: a covered upper tunnel into B, with a lower-tunnel branch into mid.
+      box(-35, -5, 6, 36, 5.8), box(-15, -3, 16, 26, 5.8), box(-20, 23, 8, 14, 5.8),
+      box(-11, -26, 10, 14, 5.8), box(-31, -40, 15, 5, 5.8),
+      box(-19, -27, 1.5, 12, 4.6, 'wall'), box(-19, -15, 1.5, 3, 4.6, 'wall'),
+      { x: -27.5, y: 3.65, z: 0, w: 9, h: .55, d: 32, kind: 'beam' },
+      // East: the mid island forces short/catwalk to turn before A; Long runs outside it.
+      box(13, -3, 16, 22, 5.8), box(23, -22, 8, 8, 5.8), box(22, 17, 12, 20, 5.8),
+      box(37, 9, 2, 10, 2.5, 'wall'), box(33, 4, 6, 1.3, 1.1, 'wall'),
+      // Staggered double doors preserve narrow mid/long peeks without closing either route.
+      box(-2.4, -8, 2.4, .35, 3.1, 'door', 0x75513a), box(2.4, -7.1, 2.4, .35, 3.1, 'door', 0x75513a),
+      { x: 0, y: 3.45, z: -8, w: 13, h: .6, d: 1.2, kind: 'beam' },
+      box(30.8, 24, 2.2, .35, 3.1, 'door', 0x75513a), box(35.2, 23.1, 2.2, .35, 3.1, 'door', 0x75513a),
+      { x: 33, y: 3.45, z: 24, w: 10, h: .6, d: 1.2, kind: 'beam' },
+      // Site cover, spawn cover, and the short-to-A cross.
+      crate(-31, -33, 4, 4, 2.2), crate(-25, -26, 3, 3, 1.6),
+      crate(25, -34, 4, 4, 2.2), crate(32, -28, 3, 3, 1.6), crate(34, -38, 2, 2, 1.3),
+      crate(12, -17, 2, 2, 1.2), crate(-8, 29, 2, 2, 1.2), crate(8, 29, 2, 2, 1.2),
     ],
-    routes: [{ x: -23, z: 0 }, { x: 23, z: 0 }, { x: -4, z: -5 }, { x: 4, z: 5 }, { x: -23, z: 20 }, { x: 23, z: -20 }],
-    blue: spawns(28), red: spawns(-28),
+    routes: [{ x: 33, z: 29 }, { x: 33, z: -10 }, { x: 28, z: -31 }, { x: 3, z: -17 }, { x: 16, z: -17 }, { x: -27.5, z: 13 }, { x: -27.5, z: -19 }, { x: -28, z: -30 }, { x: 0, z: -17 }],
+    blue: spawns(36), red: spawns(-37),
+    sites: [{ label: 'A', x: 29, z: -33 }, { label: 'B', x: -28, z: -30 }],
+    areas: [
+      { name: 'T SPAWN', x: 0, z: 36, radius: 13 }, { name: 'CT SPAWN', x: 0, z: -38, radius: 11 },
+      { name: 'A SITE', x: 29, z: -33, radius: 12 }, { name: 'B SITE', x: -28, z: -30, radius: 12 },
+      { name: 'LONG DOORS', x: 33, z: 24, radius: 7 }, { name: 'PIT', x: 34, z: 9, radius: 6 },
+      { name: 'LONG A', x: 33, z: -8, radius: 17 }, { name: 'SHORT / CATWALK', x: 13, z: -17, radius: 9 },
+      { name: 'UPPER TUNNELS', x: -27.5, z: -4, radius: 13 }, { name: 'LOWER TUNNELS', x: -20, z: 13, radius: 11 },
+      { name: 'MID DOORS', x: 0, z: -8, radius: 7 }, { name: 'TOP MID', x: 0, z: 15, radius: 15 },
+    ],
   },
   snow: {
     id: 'snow', name: 'SNOW OUTPOST', subtitle: 'COLD AIR / CLOSE QUARTERS',

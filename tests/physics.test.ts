@@ -5,7 +5,7 @@ import { MAPS } from '../src/maps';
 beforeAll(async () => { await initPhysics(); });
 describe('Rapier character controller', () => {
   it('lands on the floor and stops at solid walls', () => {
-    const physics = new Physics(MAPS.dust);
+    const physics = new Physics(MAPS.india);
     const actor = physics.character({ x: 0, z: 28 });
     physics.world.step();
     for (let i = 0; i < 120; i++) { actor.move(0, -.1, .1); physics.world.step(); }
@@ -16,7 +16,7 @@ describe('Rapier character controller', () => {
     physics.dispose();
   });
   it('can crouch and stand without moving its feet', () => {
-    const physics = new Physics(MAPS.dust);
+    const physics = new Physics(MAPS.india);
     const actor = physics.character({ x: 0, z: 28 });
     const y = actor.position().y;
     actor.crouch(true); expect(actor.position().y).toBeCloseTo(y);

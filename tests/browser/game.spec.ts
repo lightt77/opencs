@@ -158,7 +158,7 @@ test('elimination awards rounds, resets lives, and ends a match', async ({ page 
 });
 
 test('hitscan respects headshots, solid walls, friendly fire and knife range', async ({ page }) => {
-  await open(page); await deploy(page);
+  await open(page); await page.getByRole('button', { name: 'INDIA COURT', exact: true }).click(); await deploy(page);
   const result = await page.evaluate(() => {
     const g = window.__OPENCS__, p = g.player, enemy = g.actors[5], ally = g.actors[1];
     for (const actor of g.actors) { actor.alive = false; actor.body.enabled(false); }
@@ -167,7 +167,7 @@ test('hitscan respects headshots, solid walls, friendly fire and knife range', a
     g.shoot(p, enemy.eye().sub(p.eye()).normalize());
     const headshot = !enemy.alive && g.kills[0].head && p.kills === 1;
 
-    enemy.reset({ x: -13, z: 0 }, 0); p.reset({ x: -13, z: 28 }, 0); p.switching = 0;
+    enemy.reset({ x: -22, z: -10 }, 0); p.reset({ x: -22, z: 10 }, 0); p.switching = 0;
     g.shoot(p, enemy.eye().sub(p.eye()).normalize());
     const wall = enemy.health === 100;
 
@@ -188,11 +188,11 @@ test('hitscan respects headshots, solid walls, friendly fire and knife range', a
 });
 
 test('flash affects both teams, smoke blocks bot vision, and HE respects cover', async ({ page }) => {
-  await open(page); await deploy(page);
+  await open(page); await page.getByRole('button', { name: 'SNOW OUTPOST', exact: true }).click(); await deploy(page);
   const result = await page.evaluate(() => {
     const g = window.__OPENCS__, p = g.player, enemy = g.actors[5], ally = g.actors[1];
     for (const actor of g.actors) { actor.alive = false; actor.body.enabled(false); }
-    p.reset({ x: 23, z: 15 }, 0); enemy.reset({ x: 23, z: 20 }, 0); ally.reset({ x: 23, z: 12 }, 0);
+    p.reset({ x: 11, z: 12 }, 0); enemy.reset({ x: 11, z: 17 }, 0); ally.reset({ x: 11, z: 9 }, 0);
     p.switching = 0; p.cooldown = 0;
     const beforeSmoke = g.visible(p.position, enemy.position);
     g.botGrenade(p, 'flash', p.position); g.updateGrenades(2);
@@ -201,9 +201,9 @@ test('flash affects both teams, smoke blocks bot vision, and HE respects cover',
     g.botGrenade(p, 'smoke', p.position); g.updateGrenades(2);
     const smokeBlocks = !g.visible(p.position, enemy.position);
 
-    // The tall crate at z=5 shields the enemy from a nearby explosion.
-    p.reset({ x: 23, z: 8.5 }, 0); enemy.reset({ x: 23, z: 2 }, 0);
-    ally.reset({ x: 21, z: 9 }, 0); p.cooldown = 0;
+    // The crate at x=11,z=-3 shields the enemy from a nearby explosion.
+    p.reset({ x: 11, z: 0 }, 0); enemy.reset({ x: 11, z: -6 }, 0);
+    ally.reset({ x: 11, z: 2 }, 0); p.cooldown = 0;
     g.botGrenade(p, 'he', p.position); g.updateGrenades(2);
     const heCover = enemy.health === 100;
     const noFriendlyHE = ally.health === 100;
@@ -348,4 +348,16 @@ test('intermission waits for a new loadout and preserves round score', async ({ 
     return { round: g.round, score: g.scores.blue, kills: g.player.kills, primary: g.player.primary, clip: g.player.ammo.awp.clip, rejectedLiveChange: !g.continueRound('m4') };
   });
   expect(result).toEqual({ round: 2, score: 1, kills: 5, primary: 'awp', clip: 5, rejectedLiveChange: true });
+});
+
+test('Dust II displays its route callouts, mid doors, and A/B site landmarks', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await open(page); await expect(page.getByRole('button', { name: 'DUST II', exact: true })).toBeVisible();
+  await deploy(page, true); await expect(page.locator('#location-name')).toHaveText('T SPAWN');
+  await page.evaluate(() => window.__OPENCS__.player.reset({ x: -27.5, z: -4 }, 0));
+  await expect(page.locator('#location-name')).toHaveText('UPPER TUNNELS');
+  await page.evaluate(() => window.__OPENCS__.player.reset({ x: 0, z: -2 }, 0));
+  await expect(page.locator('#location-name')).toHaveText('MID DOORS');
+  await page.screenshot({ path: 'test-results/dust-ii.png' });
+  expect(errors).toEqual([]);
 });

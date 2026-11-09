@@ -20,6 +20,7 @@ export function mapSvg(arena: Arena) {
       ${arena.boxes.filter(b => b.kind !== 'beam' && b.w < arena.width / 2 && b.d < arena.depth / 2).map(b => `<rect x="${(b.x - b.w / 2) * sx + 29}" y="${(b.z - b.d / 2) * sz + 33}" width="${b.w * sx}" height="${b.d * sz}" fill="${color}" fill-opacity="${b.kind === 'crate' ? '.25' : '.5'}" stroke="${color}" stroke-width=".35"/>`).join('')}
       <path d="M29 60V40M29 6V24" stroke="${color}" stroke-dasharray="2 2" stroke-opacity=".65"/>
       <circle cx="29" cy="60" r="1.6" fill="#8cc3d2"/><circle cx="29" cy="6" r="1.6" fill="#da967d"/>
+      ${(arena.sites ?? []).map(site => `<text x="${site.x * sx + 29}" y="${site.z * sz + 34}" fill="#edb978" font-size="6" font-family="monospace" font-weight="bold" text-anchor="middle">${site.label}</text>`).join('')}
     </g><text x="12" y="137" fill="${color}" font-size="8" font-family="monospace" opacity=".55">SECTOR 0${Object.keys(MAPS).indexOf(arena.id) + 1} // ${arena.width} × ${arena.depth}</text>
   </svg>`;
 }
@@ -129,7 +130,7 @@ export class UI {
     this.hud.innerHTML = `
       <div class="hud-vignette"></div><div class="damage-wash" id="damage-wash"></div><div class="flash-wash" id="flash-wash"></div>
       <div class="smoke-wash" id="smoke-wash"></div>
-      <div class="hud-map"><div class="hud-map-title"><span class="status-dot"></span><span id="map-name"></span></div><canvas width="196" height="220" aria-label="Tactical minimap"></canvas><span class="map-footer">N ↑ <span>FRIENDLIES ONLY</span></span></div>
+      <div class="hud-map"><div class="hud-map-title"><span class="status-dot"></span><span id="map-name"></span></div><canvas width="196" height="220" aria-label="Tactical minimap"></canvas><span class="map-footer">N ↑ <span id="location-name">FRIENDLIES ONLY</span></span></div>
       <div class="match-strip"><div class="team-score blue"><span>BLUE</span><b id="blue-score">0</b></div><div class="match-clock"><strong id="clock">06:00</strong><span id="match-label">FIRST TO 40</span></div><div class="team-score red"><b id="red-score">0</b><span>RED</span></div></div>
       <div class="performance"><b id="fps">60 FPS</b><span>LOCAL MATCH · <span id="difficulty-label">MEDIUM</span></span></div>
       <div class="kill-feed" id="kill-feed"></div>
@@ -308,6 +309,8 @@ export class UI {
     if (performance.now() - this.lastHUD < 85) return;
     this.lastHUD = performance.now();
     this.set('map-name', g.arena.name); this.set('blue-score', String(g.scores.blue)); this.set('red-score', String(g.scores.red));
+    const area = g.arena.areas?.filter(a => Math.hypot(a.x - p.position.x, a.z - p.position.z) < a.radius).sort((a, b) => Math.hypot(a.x - p.position.x, a.z - p.position.z) - Math.hypot(b.x - p.position.x, b.z - p.position.z))[0];
+    this.set('location-name', area?.name ?? 'FRIENDLIES ONLY');
     this.set('clock', timeString(g.phase === 'warmup' ? g.phaseTime : g.remaining));
     e['clock'].classList.toggle('time-low', g.remaining < 20 && g.phase === 'live');
     this.set('match-label', g.settings.mode === 'tdm' ? `FIRST TO ${TDM_LIMIT}` : `ROUND ${g.round} · FIRST TO ${ROUND_LIMIT}`);
@@ -380,5 +383,7 @@ export class UI {
         ctx.beginPath(); ctx.moveTo(px(actor.position.x), pz(actor.position.z)); ctx.lineTo(px(actor.position.x - Math.sin(actor.yaw) * 3), pz(actor.position.z - Math.cos(actor.yaw) * 3)); ctx.stroke();
       }
     }
+    ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#e6b577';
+    for (const site of g.arena.sites ?? []) ctx.fillText(site.label, px(site.x), pz(site.z) + 4);
   }
 }
