@@ -1,3 +1,5 @@
+import { sanitizeProfiles, type BotProfile } from './bot-profiles';
+
 export type Team = 'blue' | 'red';
 export type Mode = 'tdm' | 'elimination';
 export type Difficulty = 'easy' | 'medium' | 'hard';
@@ -17,6 +19,7 @@ export interface Settings {
   effectsPack: 'classic' | 'assets'; radioChatter: boolean; radioVolume: number;
   allowedWeapons: WeaponId[]; grenadeCapacity: number; refillDelay: number;
   wallShots: 'off' | 'thin' | 'walls';
+  botProfiles: BotProfile[];
 }
 
 export const DEFAULTS: Settings = {
@@ -28,6 +31,7 @@ export const DEFAULTS: Settings = {
   effectsPack: 'assets', radioChatter: true, radioVolume: 70,
   allowedWeapons: ['ak', 'm4', 'awp', 'pistol', 'knife', 'he', 'flash', 'smoke'],
   grenadeCapacity: 3, refillDelay: 10, wallShots: 'walls',
+  botProfiles: sanitizeProfiles(undefined),
 };
 
 export function loadSettings(): Settings {
@@ -55,8 +59,9 @@ export function loadSettings(): Settings {
       grenadeCapacity: Math.round(finiteRange(raw.grenadeCapacity, 1, 3, 3)),
       refillDelay: finiteRange(raw.refillDelay, 1, 30, 10),
       wallShots: ['off', 'thin', 'walls'].includes(raw.wallShots) ? raw.wallShots : DEFAULTS.wallShots,
+      botProfiles: sanitizeProfiles(raw.botProfiles),
     };
-  } catch { return { ...DEFAULTS }; }
+  } catch { return { ...DEFAULTS, allowedWeapons: [...DEFAULTS.allowedWeapons], botProfiles: sanitizeProfiles(undefined) }; }
 }
 
 function finiteRange(value: unknown, min: number, max: number, fallback: number) {

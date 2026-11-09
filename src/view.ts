@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Arena } from './maps';
 import type { WeaponId } from './config';
 import { block, disposeTree, weaponModel } from './models';
+import { animateBolt, awpAction } from './weapon-animation';
 
 interface Effect { object: THREE.Object3D; life: number; total: number; grow?: number }
 
@@ -164,10 +165,18 @@ export class View {
     disposeTree(this.weapon); this.weapon.clear(); this.weapon.add(weaponModel(id, true)); this.currentWeapon = id;
   }
 
-  animateWeapon(time: number, speed: number, kick: number, reload: number, switching: number, firing: boolean, knife: boolean, crouched: boolean) {
+  animateWeapon(time: number, speed: number, kick: number, reload: number, switching: number, firing: boolean, knife: boolean, crouched: boolean, awpShotAge = Infinity) {
     const bob = Math.min(speed / 6, 1);
     this.weapon.position.set(.26 + Math.sin(time * 8) * .008 * bob, -.26 - (crouched ? .025 : 0) + Math.abs(Math.cos(time * 8)) * .012 * bob - Math.sin(reload * Math.PI) * .23 - switching * .3, -.48 + kick * .065);
     this.weapon.rotation.set(-kick * .07 + Math.sin(reload * Math.PI) * .4, -.025, Math.sin(reload * Math.PI) * -.4);
+    if (this.currentWeapon === 'awp') {
+      const pose = awpAction(awpShotAge);
+      this.weapon.position.z += pose.kick * .15;
+      this.weapon.position.y += pose.kick * .035 - pose.cycle * .035;
+      this.weapon.rotation.x -= pose.kick * .12;
+      this.weapon.rotation.z += pose.cycle * .075;
+      animateBolt(this.weapon, awpShotAge);
+    }
     if (knife && kick > 0) { this.weapon.rotation.z -= kick * .7; this.weapon.position.x -= kick * .3; }
     const muzzle = this.weapon.getObjectByName('muzzle');
     if (muzzle) { muzzle.visible = firing; muzzle.rotation.z = time * 67; }

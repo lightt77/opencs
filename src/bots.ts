@@ -5,6 +5,28 @@ import { angleDelta, clamp, distance, type Point } from './math';
 import type { Navigation } from './navigation';
 import { movementScale } from './movement';
 import { coverHits } from './ballistics';
+import type { BotProfile } from './bot-profiles';
+
+export function botSkill(profile: BotProfile | undefined, difficulty: Difficulty) {
+  if (!profile) return BOT_SKILL[difficulty];
+  const base = BOT_SKILL[profile.skill === 'low' ? 'easy' : profile.skill === 'high' ? 'hard' : 'medium'];
+  const scale = difficulty === 'easy' ? 1.3 : difficulty === 'hard' ? .8 : 1;
+  return { reaction: base.reaction * scale, error: base.error * scale, tracking: base.tracking / scale, burst: base.burst };
+}
+
+export function botTactics(profile?: BotProfile) {
+  const brave = profile?.bravery !== 'low';
+  return { cooperative: profile?.coop !== 'low', brave, retreatHealth: brave ? 30 : 65, approachRadius: brave ? 10 : 22, holdSeconds: brave ? 1 : 4 };
+}
+
+export function regroupGoal(actor: Actor, actors: Actor[]): Point | undefined {
+  if (!botTactics(actor.profile).cooperative) return;
+  // Follow an engaged teammate or a lower-ID leader, avoiding circular follow chains.
+  const ally = actors.filter(a => a !== actor && a.alive && a.team === actor.team && (a.human || a.id < actor.id || a.brain.target >= 0))
+    .sort((a, b) => distance(actor.position, a.position) - distance(actor.position, b.position))[0];
+  if (!ally || distance(actor.position, ally.position) < 9) return;
+  return { x: ally.position.x + (actor.id % 2 ? 2 : -2), z: ally.position.z + (actor.id % 3 - 1) * 2 };
+}
 
 interface Contact { point: Point; time: number }
 export interface BotContext {
@@ -17,7 +39,7 @@ export interface BotContext {
 }
 
 export function updateBot(actor: Actor, dt: number, game: BotContext) {
-  const brain = actor.brain, skill = BOT_SKILL[game.difficulty];
+  const brain = actor.brain, skill = botSkill(actor.profile, game.difficulty), tactics = botTactics(actor.profile);
   actor.sprinting = false;
   brain.decision -= dt; brain.repath -= dt; brain.pause -= dt;
   if (brain.decision <= 0) {
@@ -36,15 +58,15 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
     if (target) {
       if (brain.target !== target.id) {
         brain.acquired = game.time; brain.burst = 0;
-        brain.aimHeight = game.difficulty === 'hard' && Math.random() < .24 ? 1.56 : 1.13;
+        brain.aimHeight = (actor.profile ? actor.profile.skill === 'high' : game.difficulty === 'hard') && Math.random() < .24 ? 1.56 : 1.13;
       }
       brain.target = target.id;
       brain.memory = { point: { x: target.position.x, z: target.position.z }, time: game.time };
-      game.intel[actor.team] = { point: { ...brain.memory.point }, time: game.time };
+      if (tactics.cooperative) game.intel[actor.team] = { point: { ...brain.memory.point }, time: game.time };
     } else {
       brain.target = -1;
       const intel = game.intel[actor.team];
-      if (intel && game.time - intel.time < 6 && (!brain.memory || intel.time > brain.memory.time)) brain.memory = { point: { ...intel.point }, time: intel.time };
+      if (tactics.cooperative && intel && game.time - intel.time < 6 && (!brain.memory || intel.time > brain.memory.time)) brain.memory = { point: { ...intel.point }, time: intel.time };
     }
   }
 
@@ -62,7 +84,8 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
 
   let moveX = 0, moveZ = 0;
   const danger = targetVisible ? target.position : brain.memory?.point;
-  if (danger && (actor.health < 40 || actor.reload > 0) && brain.coverUntil <= game.time && brain.repath <= 0) {
+  const exposed = !!targetVisible && !tactics.brave && distance(actor.position, target.position) > 10;
+  if (danger && (actor.health < tactics.retreatHealth || actor.reload > 0 || exposed) && brain.coverUntil <= game.time && brain.repath <= 0) {
     const cover = findCover(actor.position, danger, game.nav);
     if (cover) {
       brain.path = game.nav.path(actor.position, cover); brain.goal = cover;
@@ -70,8 +93,8 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
     }
   }
   const retreating = brain.coverUntil > game.time;
-  const cautious = !targetVisible && !!brain.memory && game.time - brain.memory.time < 5 && distance(actor.position, brain.memory.point) < 14;
-  actor.body.crouch(!brain.climb && !retreating && (cautious || (!!targetVisible && distance(actor.position, target.position) > 12 && actor.reload <= 0)) || (retreating && brain.path.length === 0));
+  const cautious = !tactics.brave && !targetVisible && !!brain.memory && game.time - brain.memory.time < 7 && distance(actor.position, brain.memory.point) < tactics.approachRadius;
+  actor.body.crouch(!brain.climb && !retreating && (cautious || (!!targetVisible && !tactics.brave && distance(actor.position, target.position) > 12 && actor.reload <= 0)) || (retreating && brain.path.length === 0));
   if (targetVisible) {
     const delta = target.eye().sub(actor.eye());
     const d = delta.length();
@@ -111,6 +134,9 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
       const grenade = actor.weapons.find(id => isGrenade(id) && actor.ammo[id].clip > 0);
       if (grenade && isGrenade(grenade) && d < 30 && game.time - brain.acquired > skill.reaction) game.throwGrenade(actor, grenade, target.position);
     } else if (d < 5) { moveX += Math.sin(actor.yaw); moveZ += Math.cos(actor.yaw); }
+    if (tactics.brave && brain.pause > 0 && actor.weapon !== 'awp' && actor.weapon !== 'knife' && !isGrenade(actor.weapon) && d > 12 && !retreating) {
+      moveX += delta.x / d; moveZ += delta.z / d;
+    }
     if (brain.decision > .12 && d > 11 && d < 29 && game.time - brain.acquired > .8 && Math.random() < .025) {
       if (actor.ammo.he.clip) game.throwGrenade(actor, 'he', target.position);
       else if (actor.ammo.flash.clip) game.throwGrenade(actor, 'flash', target.position);
@@ -128,6 +154,7 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
     if (!retreating && (brain.repath <= 0 || (!brain.path.length && !targetVisible))) {
       const memory = brain.memory && game.time - brain.memory.time < 7 ? brain.memory.point : undefined;
       const routes = game.nav.arena.routes;
+      const regroup = regroupGoal(actor, game.actors);
       let goal: Point;
       if (memory && distance(actor.position, memory) > 3) {
         goal = { ...memory };
@@ -135,6 +162,8 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
           const edge = game.nav.arena.width / 2 - 4;
           goal.x = clamp(goal.x + (actor.id % 2 ? 8 : -8), -edge, edge);
         }
+      } else if (regroup) {
+        goal = regroup;
       } else {
         // Routes and enemy spawn are map knowledge, not knowledge of unseen enemies.
         const options = [...routes, ...game.nav.arena[actor.team === 'blue' ? 'red' : 'blue']].filter(p => distance(actor.position, p) > 3);
@@ -145,7 +174,7 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
     }
     const followingPath = brain.path.length > 0;
     while (brain.path.length && distance(actor.position, brain.path[0]) < .65) brain.path.shift();
-    if (followingPath && !brain.path.length && brain.role === 'hold') brain.hold = game.time + 2.5;
+    if (followingPath && !brain.path.length && brain.role === 'hold') brain.hold = game.time + tactics.holdSeconds;
     const waypoint = brain.path[0];
     if (waypoint) {
       const dx = waypoint.x - actor.position.x, dz = waypoint.z - actor.position.z;
@@ -194,7 +223,7 @@ export function updateBot(actor: Actor, dt: number, game: BotContext) {
     if (d > .01 && d < 1.1) { moveX += (actor.position.x - ally.position.x) / d * (1.1 - d) * 1.5; moveZ += (actor.position.z - ally.position.z) / d * (1.1 - d) * 1.5; }
   }
   const length = Math.hypot(moveX, moveZ);
-  actor.sprinting = !actor.body.crouched && !brain.climb && actor.flash <= .3 && length > .3 && (retreating || (!targetVisible && !cautious && !holdingAngle));
+  actor.sprinting = !actor.body.crouched && !brain.climb && actor.flash <= .3 && length > .3 && (retreating || (tactics.brave && !targetVisible && !cautious && !holdingAngle));
   const speed = (brain.climb ? 3.5 : targetVisible && !retreating ? 2.1 : WEAPONS[actor.weapon].speed * .8) * game.movementSpeed * movementScale(actor.body.crouched, false, actor.sprinting) * (actor.flash > .3 ? .35 : 1);
   actor.velocity.x = length > 0 ? moveX / Math.max(1, length) * speed : 0;
   actor.velocity.z = length > 0 ? moveZ / Math.max(1, length) * speed : 0;

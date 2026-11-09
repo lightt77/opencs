@@ -10,11 +10,12 @@ import { block, disposeTree } from './models';
 import { Navigation } from './navigation';
 import { Physics } from './physics';
 import { View } from './view';
-import { footstepStride, movementScale, scopeFov, verticalMotion } from './movement';
+import { airVelocity, footstepStride, movementScale, scopeFov, verticalMotion } from './movement';
 import { coverHits, penetration } from './ballistics';
 import { chooseSpawn, spawnCandidates } from './spawns';
 import { grenadeThrow } from './grenades';
 import { Radio } from './radio';
+import { drawProfiles, sanitizeProfiles } from './bot-profiles';
 
 export interface Kill { killer: string; victim: string; team: Team; weapon: WeaponId; head: boolean; time: number }
 interface Grenade { body: RAPIER.RigidBody; mesh: THREE.Object3D; owner: Actor; type: 'he' | 'flash' | 'smoke'; fuse: number }
@@ -110,6 +111,7 @@ export class Game {
   start(settings: Settings) {
     this.cleanup(); this.settings = { ...settings };
     this.settings.allowedWeapons = sanitizeWeapons(settings.allowedWeapons);
+    this.settings.botProfiles = sanitizeProfiles(settings.botProfiles);
     this.arena = MAPS[settings.map]; this.nav = new Navigation(this.arena);
     this.physics = new Physics(this.arena); this.view.build(this.arena);
     this.spawnPools = { blue: spawnCandidates(this.nav, 'blue', false), red: spawnCandidates(this.nav, 'red', false) };
@@ -134,6 +136,11 @@ export class Game {
     this.radio.reset(); this.sound.stopRadio(); this.reportedCounts.clear(); this.radioCheck = 0;
     const assigned: Array<{ point: Point; team: Team }> = [];
     const pools = { blue: spawnCandidates(this.nav, 'blue', true), red: spawnCandidates(this.nav, 'red', true) };
+    const profiles = drawProfiles(this.settings.botProfiles, this.actors.filter(a => !a.human).length);
+    for (const actor of this.actors.filter(a => !a.human)) {
+      actor.profile = profiles.shift()!;
+      actor.brain.role = actor.profile.bravery === 'low' ? (actor.profile.coop === 'high' ? 'hold' : 'flank') : 'push';
+    }
     // Alternate teams so both spawn plans account for opposing positions.
     for (const actor of [0, 5, 1, 6, 2, 7, 3, 8, 4, 9].map(id => this.actors[id])) {
       if (!this.settings.allowedWeapons.includes(actor.primary)) actor.primary = PRIMARIES.find(id => this.settings.allowedWeapons.includes(id)) ?? actor.primary;
@@ -320,7 +327,7 @@ export class Game {
         actor.step += Math.hypot(motion.x, motion.z) * dt;
         if (actor.step >= footstepStride(actor.sprinting, actor.body.crouched)) { actor.step = 0; this.footstep(actor); }
       }
-      actor.model.animate(dt, motion, actor.alive, actor.reload > 0, actor.body.grounded, actor.body.crouched, actor.deathAge, actor.deathHead);
+      actor.model.animate(dt, motion, actor.alive, actor.reload > 0, actor.body.grounded, actor.body.crouched, actor.deathAge, actor.deathHead, actor.awpShotAge);
     }
     for (const smoke of this.smokes) smoke.life -= dt;
     this.smokes = this.smokes.filter(s => s.life > 0);
@@ -343,12 +350,8 @@ export class Game {
       const v = groundVelocity(p.velocity.x, p.velocity.z, dx, dz, maxSpeed, dt);
       p.velocity.x = v.x; p.velocity.z = v.z;
     } else {
-      const length = Math.hypot(dx, dz);
-      if (length) {
-        p.velocity.x += dx / length * dt * 3; p.velocity.z += dz / length * dt * 3;
-        const speed = p.speed;
-        if (speed > maxSpeed) { p.velocity.x *= maxSpeed / speed; p.velocity.z *= maxSpeed / speed; }
-      }
+      const v = airVelocity(p.velocity.x, p.velocity.z, dx, dz, maxSpeed, dt);
+      p.velocity.x = v.x; p.velocity.z = v.z;
     }
     p.body.move(p.velocity.x * dt, p.velocity.y * dt, p.velocity.z * dt);
     // Preserve quick clicks even when down/up both occur between fixed simulation ticks.
@@ -698,7 +701,7 @@ export class Game {
     if (Math.abs(camera.fov - fov) > .01) { camera.fov = fov; camera.updateProjectionMatrix(); }
     this.view.equip(p.weapon);
     const reload = p.reload > 0 ? 1 - p.reload / WEAPONS[p.weapon].reload : 0;
-    this.view.animateWeapon(this.time, p.speed, this.kick, reload, p.switching / .25, this.shotFlash > 0, p.weapon === 'knife', p.body.crouched);
+    this.view.animateWeapon(this.time, p.speed, this.kick, reload, p.switching / .25, this.shotFlash > 0, p.weapon === 'knife', p.body.crouched, p.awpShotAge);
     if (this.grenadeCharge !== undefined) { this.view.weapon.position.y += .06; this.view.weapon.rotation.x -= .25 + this.grenadeCharge * .2; }
   }
 }

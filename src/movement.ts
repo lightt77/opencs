@@ -1,6 +1,17 @@
 export const JUMP_IMPULSE = 7.2;
 export const CROUCH_DROP = .54;
 
+// Accelerate toward the requested horizontal velocity, including braking/reversing.
+// No input preserves momentum; steering never adds diagonal speed or an air boost.
+export function airVelocity(vx: number, vz: number, dx: number, dz: number, maxSpeed: number, dt: number) {
+  const input = Math.hypot(dx, dz);
+  if (!input) return { x: vx, z: vz };
+  const targetX = dx / input * maxSpeed, targetZ = dz / input * maxSpeed;
+  const deltaX = targetX - vx, deltaZ = targetZ - vz, delta = Math.hypot(deltaX, deltaZ);
+  const step = Math.min(1, maxSpeed * 8 * dt / Math.max(delta, 1e-8));
+  return { x: vx + deltaX * step, z: vz + deltaZ * step };
+}
+
 export function movementScale(crouched: boolean, scoped: boolean, sprinting: boolean) {
   return crouched ? .48 : scoped ? .55 : sprinting ? 1.5 : 1;
 }

@@ -546,10 +546,11 @@ test('saved round timers gate combat and keep the end buffer before total scores
   expect(await page.evaluate(() => window.__OPENCS__.phase)).toBe('warmup');
 });
 
-test('bots climb low crates physically, sprint on rotations, crouch to aim and seek cover', async ({ page }) => {
+test('bots climb low crates, sprint aggressive rotations, crouch on stealth approaches and seek cover', async ({ page }) => {
   await open(page); await page.locator('[data-map="india"]').click(); await deploy(page, true);
   const result = await page.evaluate(() => {
     const g = window.__OPENCS__, bot = g.actors[1], enemy = g.actors[5]; g.phase = 'live';
+    bot.profile = { ...bot.profile!, bravery: 'high' };
     for (const a of g.actors) { a.alive = false; a.respawn = 1000; a.body.enabled(false); }
     bot.reset({ x: 0, z: 17 }, 0); bot.brain.role = 'hold'; bot.brain.decision = bot.brain.hold = 1e6;
     let height = 0, landed = false;
@@ -560,9 +561,12 @@ test('bots climb low crates physically, sprint on rotations, crouch to aim and s
     bot.reset({ x: 0, z: 28 }, 0); bot.brain.nextClimb = 1e6; bot.brain.decision = 1e6;
     for (let i = 0; i < 20; i++) g.update(1 / 60);
     const sprint = bot.sprinting;
-    bot.reset({ x: 0, z: 28 }, 0); enemy.reset({ x: 0, z: 15 }, 0);
-    enemy.brain.hold = enemy.brain.decision = 1e6; bot.brain.target = enemy.id; bot.brain.decision = 1e6;
+    bot.reset({ x: 0, z: 28 }, 0); bot.profile = { ...bot.profile!, bravery: 'low' };
+    bot.brain.decision = 1e6; bot.brain.nextClimb = 1e6;
+    bot.brain.memory = { point: { x: 0, z: 15 }, time: g.time };
     g.update(1 / 60); const crouch = bot.body.crouched;
+    enemy.reset({ x: 0, z: 15 }, 0);
+    enemy.brain.hold = enemy.brain.decision = 1e6; bot.brain.target = enemy.id; bot.brain.decision = 1e6;
     bot.health = 20; bot.brain.repath = 0; g.update(1 / 60);
     return { height, landed, sprint, crouch, cover: bot.brain.coverUntil > g.time, path: bot.brain.path.length };
   });
@@ -781,4 +785,108 @@ test('deathmatch weapon-rule changes apply on respawn, not halfway through a lif
     return { before, weapon: p.weapon, weapons: p.weapons, alive: p.alive, akAmmo: p.ammo.ak.clip };
   });
   expect(result.before).toContain('ak'); expect(result).toMatchObject({ weapon: 'knife', weapons: ['knife'], alive: true, akAmmo: 0 });
+});
+
+test('AWP has rearward kick, a visible bolt cycle, and a settled ready pose', async ({ page }) => {
+  await open(page); await page.locator('[data-map="india"]').click(); await page.locator('[data-primary="awp"]').click(); await deploy(page, true);
+  const result = await page.evaluate(() => {
+    const g = window.__OPENCS__, p = g.player; g.phase = 'live';
+    p.reset({ x: 0, z: 25 }, 0); p.switching = 0; g.camera(1 / 60);
+    const rest = g.view.weapon.position.z;
+    g.shoot(p, p.eye().set(0, 0, -1)); g.camera(1 / 60);
+    const kick = g.view.weapon.position.z, pitch = g.view.weapon.rotation.x;
+    for (let i = 0; i < 24; i++) g.update(1 / 60); g.camera(1 / 60);
+    const bolt = g.view.weapon.getObjectByName('awp-bolt')!;
+    const cycle = { slide: bolt.position.z, roll: bolt.rotation.z };
+    for (let i = 0; i < 40; i++) g.update(1 / 60); g.camera(1 / 60);
+    return { rest, kick, pitch, cycle, settled: g.view.weapon.position.z, closed: bolt.position.z, ammo: p.ammo.awp.clip };
+  });
+  expect(result.kick).toBeGreaterThan(result.rest + .15); expect(result.pitch).toBeLessThan(-.15);
+  expect(result.cycle.slide).toBeGreaterThan(.09); expect(result.cycle.roll).toBeLessThan(-.8);
+  expect(result.settled).toBeCloseTo(result.rest); expect(result.closed).toBe(0); expect(result.ammo).toBe(4);
+});
+
+test('a leftward jump can be counter-steered right before landing', async ({ page }) => {
+  await open(page); await page.locator('[data-map="india"]').click(); await deploy(page, true);
+  await page.evaluate(() => {
+    const g = window.__OPENCS__; g.phase = 'live';
+    for (const a of g.actors.slice(1)) { a.alive = false; a.respawn = 1000; a.body.enabled(false); }
+    g.player.reset({ x: 0, z: 25 }, 0);
+  });
+  await page.keyboard.down('KeyA');
+  await page.evaluate(() => { for (let i = 0; i < 12; i++) window.__OPENCS__.update(1 / 60); });
+  await page.keyboard.press('Space');
+  const left = await page.evaluate(() => {
+    const g = window.__OPENCS__; for (let i = 0; i < 4; i++) g.update(1 / 60);
+    return { vx: g.player.velocity.x, y: g.player.position.y, grounded: g.player.body.grounded };
+  });
+  await page.keyboard.up('KeyA'); await page.keyboard.down('KeyD');
+  const right = await page.evaluate(() => {
+    const g = window.__OPENCS__; for (let i = 0; i < 18; i++) g.update(1 / 60);
+    return { vx: g.player.velocity.x, y: g.player.position.y, grounded: g.player.body.grounded, speed: g.player.speed };
+  });
+  await page.keyboard.up('KeyD');
+  expect(left.vx).toBeLessThan(-3); expect(left.y).toBeGreaterThan(.1); expect(left.grounded).toBe(false);
+  expect(right.vx).toBeGreaterThan(3); expect(right.y).toBeGreaterThan(.1); expect(right.grounded).toBe(false); expect(right.speed).toBeLessThanOrEqual(5.6 + 1e-5);
+});
+
+test('personality settings persist selected profiles and edited attributes for both teams', async ({ page }) => {
+  await open(page); await page.locator('#bot-profiles').click();
+  await expect(page.locator('[data-profile]')).toHaveCount(10);
+  await page.getByLabel('Hunter skill', { exact: true }).selectOption('low');
+  await page.getByLabel('Hunter Co-op', { exact: true }).selectOption('high');
+  await page.getByLabel('Hunter bravery', { exact: true }).selectOption('low');
+  for (const name of ['Vanguard', 'Sentinel', 'Shade', 'Wingman', 'Anchor', 'Raider', 'Lurker', 'Rookie', 'Hothead']) await page.getByLabel(`Enable ${name} profile`, { exact: true }).uncheck();
+  await page.getByLabel('Enable Hunter profile', { exact: true }).click();
+  await expect(page.getByLabel('Enable Hunter profile', { exact: true })).toBeChecked();
+  await expect(page.locator('#profile-hint')).toHaveText('Keep at least one profile selected.');
+  await page.getByRole('button', { name: 'Close settings' }).click(); await page.reload(); await page.locator('#bot-profiles').click();
+  await expect(page.getByLabel('Hunter skill', { exact: true })).toHaveValue('low');
+  await expect(page.getByLabel('Hunter Co-op', { exact: true })).toHaveValue('high');
+  await expect(page.getByLabel('Hunter bravery', { exact: true })).toHaveValue('low');
+  await expect(page.locator('[data-profile-enabled]:checked')).toHaveCount(1);
+  await page.screenshot({ path: 'test-results/bot-profiles.png' });
+  await page.getByRole('button', { name: 'Close settings' }).click(); await deploy(page, true);
+  expect(await page.evaluate(() => window.__OPENCS__.actors.slice(1).every(a => a.profile?.id === 'hunter' && a.profile.skill === 'low' && a.profile.coop === 'high' && a.profile.bravery === 'low'))).toBe(true);
+  await page.keyboard.down('Tab'); await expect(page.locator('#scoreboard .profile-badge')).toHaveCount(9);
+  await expect(page.locator('#scoreboard [title*="Skill LOW / Co-op HIGH / Bravery LOW"]')).toHaveCount(9); await page.keyboard.up('Tab');
+  await page.keyboard.press('Escape'); await page.locator('#pause-settings').click();
+  await page.getByRole('button', { name: 'RESET BOT PROFILES', exact: true }).click();
+  await expect(page.locator('[data-profile-enabled]:checked')).toHaveCount(10);
+  await expect(page.getByLabel('Hunter skill', { exact: true })).toHaveValue('high');
+  await expect(page.getByLabel('Hunter Co-op', { exact: true })).toHaveValue('low');
+  // Editing/resetting settings never mutates a live assigned personality.
+  expect(await page.evaluate(() => window.__OPENCS__.actors[1].profile?.skill)).toBe('low');
+});
+
+test('profiles shuffle each round without replacement and remain stable through deathmatch respawns', async ({ page }) => {
+  await open(page); await deploy(page, true);
+  const result = await page.evaluate(() => {
+    const g = window.__OPENCS__; g.phase = 'live';
+    const initial = g.actors.slice(1).map(a => a.profile!.id);
+    const bot = g.actors[1], profile = { ...bot.profile! };
+    bot.immunity = 0; g.damage(bot, 200, g.actors[5], 'ak'); bot.respawn = 0; g.update(1 / 60);
+    const stable = JSON.stringify(bot.profile) === JSON.stringify(profile);
+    const rounds = [initial]; for (let i = 0; i < 3; i++) { g.resetActors(); rounds.push(g.actors.slice(1).map(a => a.profile!.id)); }
+    return { rounds, stable, human: g.player.profile };
+  });
+  expect(result.stable).toBe(true); expect(result.human).toBeUndefined();
+  for (const round of result.rounds) expect(new Set(round).size).toBe(9);
+  expect(new Set(result.rounds.map(r => r.join(','))).size).toBeGreaterThan(1);
+});
+
+test('profile-pool edits wait for the next elimination round and preserve player scores', async ({ page }) => {
+  await open(page); await page.locator('[data-mode="elimination"]').click(); await deploy(page, true);
+  const previous = await page.evaluate(() => {
+    const g = window.__OPENCS__; g.phase = 'live'; const initial = g.actors.slice(1).map(a => a.profile!.id);
+    g.settings.botProfiles = g.settings.botProfiles.map(p => ({ ...p, enabled: p.id === 'rookie', skill: 'low', coop: 'high', bravery: 'low' }));
+    const unchanged = g.actors.slice(1).every((a, i) => a.profile!.id === initial[i]);
+    for (const a of g.actors.filter(a => a.team === 'red')) { a.immunity = 0; g.damage(a, 200, g.player, 'ak'); }
+    for (let i = 0; i < 160; i++) g.update(1 / 60);
+    return { unchanged, kills: g.player.kills };
+  });
+  await page.getByRole('button', { name: 'START ROUND 2' }).click();
+  expect(previous.unchanged).toBe(true);
+  expect(await page.evaluate(() => window.__OPENCS__.actors.slice(1).every(a => a.profile!.id === 'rookie'))).toBe(true);
+  expect(await page.evaluate(() => window.__OPENCS__.player.kills)).toBe(previous.kills);
 });

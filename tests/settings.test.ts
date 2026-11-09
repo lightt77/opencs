@@ -9,6 +9,16 @@ describe('saved settings', () => {
     stored({ map: 'india', volume: 25 });
     expect(loadSettings()).toEqual({ ...DEFAULTS, map: 'india', volume: 25 });
   });
+  it('persists bot profile pool selection and edited personality attributes', () => {
+    stored({ botProfiles: [{ id: 'hunter', skill: 'low', coop: 'high', bravery: 'low', enabled: false }] });
+    expect(loadSettings().botProfiles.find(p => p.id === 'hunter')).toMatchObject({ skill: 'low', coop: 'high', bravery: 'low', enabled: false });
+    stored({ botProfiles: 'broken' }); expect(loadSettings().botProfiles).toEqual(DEFAULTS.botProfiles);
+  });
+  it('does not share mutable profile defaults when stored settings are corrupt', () => {
+    stored(null); const settings = loadSettings(); settings.botProfiles[0].skill = 'low';
+    expect(DEFAULTS.botProfiles[0].skill).toBe('high');
+    expect(loadSettings().botProfiles[0].skill).toBe('high');
+  });
   it('clamps movement modifiers and rejects invalid toggles', () => {
     stored({ movementSpeed: 999, jumpGravity: -1, doubleJump: 'true' });
     expect(loadSettings()).toMatchObject({ movementSpeed: 2, jumpGravity: 10, doubleJump: false });

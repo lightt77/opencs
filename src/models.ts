@@ -3,6 +3,7 @@ import { TEAM_COLOR, type Team, type WeaponId } from './config';
 import { footTarget, solveLeg } from './animation';
 import { clamp, type Point } from './math';
 import { CROUCH_DROP } from './movement';
+import { animateBolt, awpAction } from './weapon-animation';
 
 const material = (color: number, roughness = .85) => new THREE.MeshStandardMaterial({ color, roughness });
 const steel = material(0x303a3c, .4);
@@ -41,6 +42,10 @@ export function weaponModel(id: WeaponId, hands = false): THREE.Group {
       cylinder(root, .038, .24, [0, .13, -.16], dark);
       cylinder(root, .047, .065, [0, .13, -.29], steel);
       block(root, [.05, .07, .12], [0, .065, -.14], steel);
+      const bolt = new THREE.Group(); bolt.name = 'awp-bolt'; root.add(bolt);
+      block(bolt, [.1, .02, .025], [.065, .035, -.08], steel);
+      const handle = new THREE.Mesh(new THREE.SphereGeometry(.024, 6, 4), dark);
+      handle.position.set(.12, .025, -.08); bolt.add(handle);
     }
     if (id === 'm4') cylinder(root, .027, .15, [0, .015, -.8], dark);
   } else if (id === 'pistol') {
@@ -154,7 +159,7 @@ export class Soldier {
     this.body.add(this.gun);
   }
 
-  animate(dt: number, motion: Point, alive: boolean, reloading: boolean, grounded: boolean, crouched: boolean, deathAge = 0, deathHead = false) {
+  animate(dt: number, motion: Point, alive: boolean, reloading: boolean, grounded: boolean, crouched: boolean, deathAge = 0, deathHead = false, awpShotAge = Infinity) {
     this.flash = Math.max(0, this.flash - dt);
     this.gun.getObjectByName('muzzle')!.visible = this.flash > 0 && alive;
     this.death = alive ? 0 : clamp(deathAge / (deathHead ? .65 : .8), 0, 1);
@@ -182,6 +187,13 @@ export class Soldier {
       foot.rotation.set(pose.ankle, 0, -pose.roll);
     });
     this.gun.rotation.x = reloading ? -.55 : -this.flash * 2;
+    this.gun.position.z = -.35;
+    if (this.heldWeapon === 'awp') {
+      const pose = awpAction(awpShotAge);
+      this.gun.position.z += pose.kick * .1;
+      if (!reloading) this.gun.rotation.x -= pose.kick * .1;
+      animateBolt(this.gun, awpShotAge);
+    }
     this.rightArm.rotation.x = reloading ? .1 : -.35;
     this.leftArm.rotation.x = -.35 + Math.sin(this.gaitPhase * Math.PI * 2) * .04 * this.gaitAmount;
   }

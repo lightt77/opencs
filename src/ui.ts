@@ -5,6 +5,7 @@ import { clamp } from './math';
 import { SOUND_PACKS, soundPackDescription } from './audio';
 import { CUSTOM_WEAPONS } from './custom-audio';
 import { Vector3 } from 'three';
+import { BOT_PROFILES, profileLabel, sanitizeProfiles } from './bot-profiles';
 
 const cross = '<svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M16 2v8m0 12v8M2 16h8m12 0h8" stroke="currentColor" stroke-width="3"/><circle cx="16" cy="16" r="3" fill="currentColor"/></svg>';
 const arrow = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" stroke="currentColor" stroke-width="1.6"/></svg>';
@@ -98,7 +99,7 @@ export class UI {
               <button data-mode="tdm" class="mode-option ${s.mode === 'tdm' ? 'selected' : ''}" aria-pressed="${s.mode === 'tdm'}"><span class="mode-icon">≋</span><span><strong>TEAM DEATHMATCH</strong><small>Respawn. Regroup. First to ${TDM_LIMIT}.</small></span><span class="radio"></span></button>
               <button data-mode="elimination" class="mode-option ${s.mode === 'elimination' ? 'selected' : ''}" aria-pressed="${s.mode === 'elimination'}"><span class="mode-icon">◇</span><span><strong>ELIMINATION</strong><small>One life. Every angle matters.</small></span><span class="radio"></span></button>
             </div>
-            <div class="control-label"><span>BOT DIFFICULTY</span><span>AIM + REACTION</span></div>
+            <div class="control-label"><span>BOT DIFFICULTY</span><button class="text-button" id="bot-profiles">BOT PROFILES ↗</button></div>
             <div class="segments" role="group" aria-label="Bot difficulty">${(['easy', 'medium', 'hard'] as const).map(d => `<button data-difficulty="${d}" class="${s.difficulty === d ? 'selected' : ''}" aria-pressed="${s.difficulty === d}">${d.toUpperCase()}</button>`).join('')}</div>
              <div class="control-label"><span>PRIMARY WEAPON</span><span>${s.map === 'longshot' ? 'AWP RECOMMENDED' : 'ALLOWED LOADOUT'}</span></div>
              <div class="segments weapons" role="group" aria-label="Primary weapon">${PRIMARIES.map(id => `<button data-primary="${id}" ${s.allowedWeapons.includes(id) ? '' : 'disabled'} class="${s.primary === id && s.allowedWeapons.includes(id) ? 'selected' : ''}" aria-pressed="${s.primary === id && s.allowedWeapons.includes(id)}"><span class="weapon-glyph">${id === 'awp' ? '━╋━' : '━┳┓'}</span>${WEAPONS[id].name}</button>`).join('')}</div>
@@ -127,6 +128,7 @@ export class UI {
     this.menu.querySelector('#open-settings')!.addEventListener('click', () => this.openSettings());
     this.menu.querySelector('#open-controls')!.addEventListener('click', () => this.controls());
     this.menu.querySelector('#weapon-rules')!.addEventListener('click', () => { this.openSettings(); this.overlay.querySelector('#match-rules')!.scrollIntoView(); });
+    this.menu.querySelector('#bot-profiles')!.addEventListener('click', () => { this.openSettings(); this.overlay.querySelector('#bot-personalities')!.scrollIntoView(); });
   }
 
   private buildHUD() {
@@ -252,6 +254,13 @@ export class UI {
       <label class="slider-label" for="refillDelay">DEATHMATCH REFILL DELAY <output>${s.refillDelay}s</output></label><input id="refillDelay" type="range" min="1" max="30" step="1" value="${s.refillDelay}" />
       <label class="slider-label" for="wallShots">BULLET WALL PENETRATION</label><select id="wallShots" class="pack-select"><option value="walls" ${s.wallShots === 'walls' ? 'selected' : ''}>ALL WALLS · REDUCED DAMAGE</option><option value="thin" ${s.wallShots === 'thin' ? 'selected' : ''}>THIN COVER ONLY</option><option value="off" ${s.wallShots === 'off' ? 'selected' : ''}>OFF</option></select><p class="settings-hint">Floors always block bullets. Bots still need line of sight.</p>
       </section>
+      <section id="bot-personalities"><h3>BOT PERSONALITIES · BOTH TEAMS</h3>
+      <p class="settings-hint">Shuffle enabled profiles across the nine bots each round. No repeats until the pool is used; deathmatch respawns keep their profile. Skill controls aim/reaction, Co-op controls sharing/regrouping, and Bravery controls stealth/assault. Difficulty scales all profiles. Changes apply next match or round.</p>
+      <div class="profile-table" role="group" aria-label="Bot personality profiles"><div class="profile-head"><span>USE / PROFILE</span><span>SKILL</span><span>CO-OP</span><span>BRAVERY</span></div>
+      ${s.botProfiles.map(p => `<div class="profile-row" data-profile="${p.id}"><label><input type="checkbox" data-profile-enabled="${p.id}" aria-label="Enable ${p.name} profile" ${p.enabled ? 'checked' : ''} />${p.name}</label>${(['skill', 'coop', 'bravery'] as const).map(key => `<select data-profile-trait="${key}" aria-label="${p.name} ${key === 'coop' ? 'Co-op' : key}">${(key === 'skill' ? ['low', 'mid', 'high'] : ['low', 'high']).map(value => `<option value="${value}" ${p[key] === value ? 'selected' : ''}>${value.toUpperCase()}</option>`).join('')}</select>`).join('')}</div>`).join('')}</div>
+      <p class="settings-hint" id="profile-hint" role="status">${s.botProfiles.filter(p => p.enabled).length} profiles enabled. Keep at least one selected.</p>
+      <button class="secondary-button" id="reset-profiles">RESET BOT PROFILES</button>
+      </section>
       <button class="secondary-button" id="reset-settings">RESTORE DEFAULTS</button><p class="dialog-footnote">Saved on this device. Match options stay unchanged.</p>
     </section>`;
     for (const key of ['sensitivity', 'volume', 'fov', 'movementSpeed', 'jumpGravity', 'freezeTime', 'roundEndDelay', 'radioVolume', 'grenadeCapacity', 'refillDelay'] as const) {
@@ -284,6 +293,25 @@ export class UI {
     }));
     const presets: Record<string, WeaponId[]> = { all: [...WEAPON_IDS], awp: ['awp'], 'awp-ak': ['ak', 'awp'], usp: ['pistol'], knife: ['knife'], grenades: ['he', 'flash', 'smoke'] };
     this.overlay.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach(button => button.addEventListener('click', () => { updateRules(presets[button.dataset.preset!]); }));
+    this.overlay.querySelectorAll<HTMLElement>('[data-profile]').forEach(row => {
+      const profile = this.settings.botProfiles.find(p => p.id === row.dataset.profile)!;
+      row.querySelector<HTMLInputElement>('input')!.addEventListener('change', event => {
+        const input = event.target as HTMLInputElement;
+        if (!input.checked && this.settings.botProfiles.filter(p => p.enabled).length === 1) {
+          input.checked = true; this.overlay.querySelector('#profile-hint')!.textContent = 'Keep at least one profile selected.'; return;
+        }
+        profile.enabled = input.checked;
+        this.overlay.querySelector('#profile-hint')!.textContent = `${this.settings.botProfiles.filter(p => p.enabled).length} profiles enabled. Changes apply next match or round.`;
+        this.applySettings();
+      });
+      row.querySelectorAll<HTMLSelectElement>('select').forEach(select => select.addEventListener('change', () => {
+        Object.assign(profile, { [select.dataset.profileTrait!]: select.value }); this.applySettings();
+      }));
+    });
+    this.overlay.querySelector('#reset-profiles')!.addEventListener('click', () => {
+      this.settings.botProfiles = sanitizeProfiles(BOT_PROFILES); this.applySettings(); this.openSettings();
+      this.overlay.querySelector('#bot-personalities')!.scrollIntoView();
+    });
     this.overlay.querySelector('#soundPack')!.addEventListener('change', event => {
       this.settings.soundPack = (event.target as HTMLSelectElement).value as Settings['soundPack'];
       this.overlay.querySelector('#pack-description')!.textContent = soundPackDescription(this.settings.soundPack);
@@ -448,7 +476,7 @@ export class UI {
 
   private scoreboardHTML(intermission = false) {
     const g = this.game;
-    const teams = (['blue', 'red'] as const).map(team => `<section class="board-team"><div class="scoreboard-team ${team}-text"><span>${team.toUpperCase()} TEAM</span><span>${g.scores[team]}</span></div><div class="scoreboard-row board-labels"><span>OPERATOR</span><span>K</span><span>D</span><span>STATUS</span></div>${g.actors.filter(a => a.team === team).sort((a, b) => b.kills - a.kills).map(a => `<div class="scoreboard-row ${a.human ? 'is-you' : ''}"><span>${a.name}${a.human ? ' <small>/ YOU</small>' : ''}</span><span>${a.kills}</span><span>${a.deaths}</span><span class="${a.alive ? 'alive' : 'dead'}">${a.alive ? 'ACTIVE' : 'DOWN'}</span></div>`).join('')}</section>`).join('');
+    const teams = (['blue', 'red'] as const).map(team => `<section class="board-team"><div class="scoreboard-team ${team}-text"><span>${team.toUpperCase()} TEAM</span><span>${g.scores[team]}</span></div><div class="scoreboard-row board-labels"><span>OPERATOR</span><span>K</span><span>D</span><span>STATUS</span></div>${g.actors.filter(a => a.team === team).sort((a, b) => b.kills - a.kills).map(a => `<div class="scoreboard-row ${a.human ? 'is-you' : ''}"><span class="operator-name" ${a.profile ? `title="${profileLabel(a.profile)}" aria-label="${a.name}: ${profileLabel(a.profile)}"` : ''}>${a.name}${a.human ? ' <small>/ YOU</small>' : a.profile ? ` <small class="profile-badge">${a.profile.name}</small>` : ''}</span><span>${a.kills}</span><span>${a.deaths}</span><span class="${a.alive ? 'alive' : 'dead'}">${a.alive ? 'ACTIVE' : 'DOWN'}</span></div>`).join('')}</section>`).join('');
     return `<div class="scoreboard-heading"><span>${g.arena.name} / ${g.settings.mode === 'tdm' ? 'TEAM DEATHMATCH' : 'ELIMINATION'}</span><span>LOCAL MATCH</span></div><h2>SQUAD STATUS</h2><div class="board-teams">${teams}</div>${intermission ? '' : '<p>HOLD TAB TO VIEW · RELEASE TO CLOSE</p>'}`;
   }
 

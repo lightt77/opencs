@@ -4,6 +4,7 @@ import type { CharacterBody } from './physics';
 import type { Point } from './math';
 import { Soldier } from './models';
 import { CROUCH_DROP } from './movement';
+import type { BotProfile } from './bot-profiles';
 
 export interface Ammo { clip: number; reserve: number }
 export interface Brain {
@@ -51,6 +52,7 @@ export class Actor {
   deathOrigin = new THREE.Vector3();
   deathDirection = new THREE.Vector3();
   brain: Brain;
+  profile?: BotProfile;
   model: Soldier;
 
   constructor(readonly id: number, readonly name: string, readonly team: Team, readonly human: boolean, primary: Primary, readonly body: CharacterBody) {

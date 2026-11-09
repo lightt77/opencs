@@ -24,7 +24,7 @@ npm run test:browser # Real Chromium integration tests, including pointer lock
 - Team deathmatch and round-based elimination, without an economy or bomb objective.
 - Dust II: Dust2-inspired routing with Long A/pit, short/catwalk, mid double doors, covered B tunnels, A/B landmarks, and defender-side rotations. This is a compact, single-level layout adaptation using original geometry—not an exact scale/elevation replica. A/B are landmarks, not bomb objectives. Snow and India remain compact original arenas. Longshot Range is a 320 × 420 m open sniper arena with 370 m spawn sightlines and scattered flank cover.
 - AK, M4, AWP, pistol, knife, HE, flash, and smoke.
-- Easy / medium / hard bots with perception, shared last-known enemy positions, cover retreats, quiet crouched approaches, sprinting rotations, and physical jumps onto reachable low crates.
+- Ten configurable bot personalities with individual skill, teamwork and bravery, scaled by easy / medium / hard difficulty. Bots use perception, last-known enemy positions, cover retreats, quiet approaches, sprinting rotations, and physical jumps onto reachable low crates.
 - Randomized, spaced-out spawns: round starts use opposite rear zones; deathmatch respawns search the map for concealed positions away from enemies and teammates. Open arenas cannot guarantee complete concealment.
 - Locally saved preferences; entirely local matches.
 - Movement-speed and jump-gravity sliders, optional double jump, three built-in gunshot styles, and locally imported custom gunshots.
@@ -58,12 +58,15 @@ Open **Settings** from the lobby or pause menu. Changes apply immediately and pe
 - **Movement speed:** 0.5–2.0×, applied to the player and both bot teams.
 - **Double jump:** off by default. When enabled, press Space again in the air for one extra jump; landing replenishes it. Walking off an edge allows one air jump, not two.
 - **Jump gravity:** 10–35 m/s² (default 20). Lower values mean higher, floatier jumps. Grenade gravity is unchanged.
+- **Air steering:** WASD can brake and reverse a jump's horizontal direction before landing (including left → right). Steering accelerates smoothly toward weapon/movement-scaled speed without a diagonal boost; releasing movement preserves horizontal momentum. Jump impulse/gravity and airborne shot inaccuracy are unchanged.
 - **Start freeze:** 0–10 seconds (default 3), before combat begins at match/round start. **Round-end buffer:** 0–6 seconds (default 2.5), before the loadout or final-results screen. Timing preferences persist; updated durations apply at the next corresponding phase. Round loadout shows cumulative rounds and kills for both teams.
 - **Gunshot packs:** Classic (dry/metallic), Punchy (sharp attack and bass tail), Suppressed (soft/filtered), **Asset Recordings** (supplied AK/M4/AWP/USP WAVs), and Custom / Your Files. The original procedural packs and browser imports remain available. Use **Preview gunshot** to compare your selected primary. Packs affect both teams; suppressed audio is cosmetic and does not change bot hearing or weapon balance.
 - **Movement & effect sounds:** choose Asset Recordings or Classic Synthesized independently of gunshots. Asset mode maps `footsteps`, `jump1`, `zoom`, `generic_reload`, `hegrenade-2`, and `flashbang` to their matching events. The footstep sample uses a short faded segment to preserve distance-driven cadence; synthetic snow variation remains available in Classic. Missing or undecodable recordings fall back to synthesized effects.
 - **Radio chatter & death voices / Voice volume:** independently enable/mute and adjust supplied voice clips. Team radio has named subtitles, randomized variants, per-event cooldowns, and no overlapping callouts. Death cries are positional for both teams. Existing saved sound-pack choices are preserved; select **Asset Recordings** to use the supplied gunshots.
 
 **AWP quick-switch:** Q swaps to the last equipped weapon (USP initially). Tap Q twice after a shot to switch away and back, reducing bolt recovery from 1.35 s to a minimum 0.7 s. Each quick draw takes 0.12 s. This does not replenish ammunition or bypass an empty magazine, and switching cancels an unfinished reload. Other weapons keep independent firing cooldowns.
+
+**AWP firing animation:** a stronger rearward stock kick and muzzle rise settle over ~0.24 s, followed by a visible bolt-handle lift, rearward pull, and return by ~0.72 s. This is cosmetic and does not change damage, recoil accuracy, ammunition, or quick-switch timing. The same bolt/recoil motion is visible on bot rifles.
 
 **Sprint / crouch / footsteps:** Shift + forward moves at 1.5× weapon speed, lowers accuracy through movement, and cancels scope. Firing stops sprinting; the remaining momentum still hurts accuracy. Hold Ctrl or C for a lower eye/hitbox, 48% speed, and quieter steps. You cannot stand into a low ceiling. Footsteps follow actual grounded distance, not held movement keys: blocked movement and airborne motion make no steps. Snow has a crunchier sound. Bots hear walking within 13 m, sprinting within 23 m, and crouching within 3 m.
 
@@ -74,6 +77,29 @@ Open **Settings** from the lobby or pause menu. Changes apply immediately and pe
 **Deaths:** operators fall onto their backs; lethal headshots add a short airborne, backward impulse (~0.85 m / 2.8 ft when unobstructed). Wall clearance limits knockback. Your view falls for ~0.8 s, then pans toward and zooms onto the killer over 1.5 s, before ordinary teammate spectating / deathmatch respawn. This is a procedural animation, not a full physics ragdoll. Shortening the round-end buffer can cut the cinematic short. Bots climb reachable crates up to 1.35 m, not arbitrary buildings or roofs.
 
 **Longshot Range:** choose an AWP for sightlines exceeding 370 m. Spawns are now randomized and prefer concealment, so the opening is not always a face-to-face sniper duel. Bots use sniper rifles, respect cover, and can perceive visible targets across the map. The AWP has a 700 m hitscan range, gentler damage falloff, and a stronger 12° first-stage scope on Longshot; rifle and pistol ranges are unchanged. The larger arena has appropriately extended rendering/fog distances and a coarser navigation grid to keep pathfinding lightweight.
+
+### Bot personalities
+
+Open **Bot Profiles** beside lobby difficulty, or **Settings → Bot Personalities** (also available while paused or between rounds). Enable the profiles you want in the random pool, and edit each profile's Skill, Co-op, and Bravery independently. At least one profile must remain enabled. **Reset Bot Profiles** restores all ten profiles and their original traits without changing other settings.
+
+| Profile | Skill | Co-op | Bravery |
+| --- | --- | --- | --- |
+| Vanguard | High | High | High |
+| Sentinel | High | High | Low |
+| Hunter | High | Low | High |
+| Shade | High | Low | Low |
+| Wingman | Mid | High | High |
+| Anchor | Mid | High | Low |
+| Raider | Mid | Low | High |
+| Lurker | Mid | Low | Low |
+| Rookie | Low | High | Low |
+| Hothead | Low | Low | High |
+
+- **Skill:** low/mid/high controls aim error, reaction delay, tracking speed, burst length and headshot preference. Overall lobby difficulty scales reaction/aim/tracking for every profile; it does not replace their individual skills.
+- **Co-op:** high bots share real sightings, act on fresh team intel, and regroup with an ally when they have no recent contact of their own. Low bots neither publish nor follow shared sightings and roam independently. Both still avoid collisions, hear nearby sounds, and obey visibility rules; no wall vision is added.
+- **Bravery:** low bots avoid sprinting except when escaping danger, crouch near a recently known threat, seek cover earlier, and favor held/flanking angles. High bots sprint rotations, push forward between firing bursts, and retreat at lower health. Snipers retain planted long-range firing behavior.
+
+Both teams draw from the same shuffled pool at match start and every elimination round. No profile repeats until the enabled pool is exhausted (nine bots draw nine different profiles with the full pool). Deathmatch respawns retain their current personality. Pool/trait edits are saved immediately but apply only at the next match or round, not halfway through a life. Names and cumulative scores remain tied to operators, not profiles. Scoreboards show the assigned profile beside each bot; its tooltip lists all three traits.
 
 ### Import your own sound pack
 
