@@ -82,7 +82,7 @@ export class UI {
       <header class="topbar">
         <a class="brand" href="#" aria-label="OpenCS home"><span class="brand-mark">${cross}</span><span>OPEN<span class="brand-light">CS</span><span class="brand-dot">®</span></span></a>
         <nav aria-label="Main navigation"><span class="nav-active">PLAY</span><button class="text-button" id="open-settings">SETTINGS</button><button class="text-button" id="open-controls">FIELD MANUAL ${arrow}</button></nav>
-        <div class="build-tag"><span class="status-dot"></span> OFFLINE READY <span class="version">/ v0.1</span></div>
+        <div class="build-tag"><span class="status-dot"></span> OFFLINE READY <span class="version">/ v0.2</span></div>
       </header>
       <main class="lobby">
         <section class="briefing" aria-labelledby="hero-title">
