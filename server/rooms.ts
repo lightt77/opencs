@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 import { sanitizeSettings } from '../src/config';
 import { balancedTeam, cleanControls, operators, type Member, type Room } from '../src/lan-protocol';
+import type { LanLog } from './diagnostics';
 
 export function privateAddress(address = '') {
   const ip = address.replace(/^::ffff:/, '');
@@ -10,14 +11,15 @@ export function privateAddress(address = '') {
 }
 
 interface Peer { id: string; ws: WebSocket; room?: Room; alive: boolean; count: number; since: number }
-export function attachRooms(server: Server) {
+export function attachRooms(server: Server, log: LanLog = () => {}) {
   const rooms = new Map<string, Room>(), peers = new Map<string, Peer>();
   const wss = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024, perMessageDeflate: false });
   server.on('upgrade', (req, socket, head) => {
     if (req.url !== '/lan') return; // Leave Vite's HMR socket alone.
     let origin: URL;
-    try { origin = new URL(req.headers.origin ?? ''); } catch { socket.destroy(); return; }
-    if (!privateAddress(req.socket.remoteAddress) || origin.host !== req.headers.host) { socket.destroy(); return; }
+    try { origin = new URL(req.headers.origin ?? ''); } catch { log(`WebSocket rejected from ${req.socket.remoteAddress}: missing/invalid Origin`); socket.destroy(); return; }
+    if (!privateAddress(req.socket.remoteAddress) || origin.host !== req.headers.host) { log(`WebSocket rejected from ${req.socket.remoteAddress}: non-LAN source or Origin/Host mismatch`); socket.destroy(); return; }
+    log(`WebSocket accepted from ${req.socket.remoteAddress}`);
     wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws));
   });
   const send = (peer: Peer | undefined, data: unknown) => {
@@ -102,8 +104,8 @@ export function attachRooms(server: Server) {
         }
       } catch { send(peer, { type: 'error', message: 'Invalid room message.' }); }
     });
-    ws.on('close', () => { leave(peer); peers.delete(peer.id); });
-    ws.on('error', () => ws.close());
+    ws.on('close', code => { log(`WebSocket disconnected (${code})`); leave(peer); peers.delete(peer.id); });
+    ws.on('error', error => { log(`WebSocket error: ${error.message}`); ws.close(); });
   });
   const heartbeat = setInterval(() => {
     for (const peer of peers.values()) { if (!peer.alive) peer.ws.terminate(); else { peer.alive = false; peer.ws.ping(); } }

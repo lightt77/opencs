@@ -41,6 +41,24 @@ Keep the host browser **open, awake and in the foreground**; background timer th
 
 Allow Node/the app through the host firewall for **private networks**. Wi-Fi guest/client isolation can block device-to-device traffic; use a trusted network without isolation. `PORT=5175 npm start` changes the production port. Do **not** forward the port or use a public tunnel. The room socket rejects public-source IPs and cross-origin browser connections; this is a trusted-LAN prototype, not an internet-hardened dedicated server. Room traffic is unencrypted local HTTP/WebSocket.
 
+### Guest cannot load the page / connection diagnostics
+
+Use **the exact same `http://Wi-Fi-IP:port` URL on the host and guests**, including `http` and the port. Do not use `localhost` on the host for a LAN match: a separate solo server can occupy loopback on the same port on macOS and serve a different set of rooms. Startup warns if it detects this. Stop the old servers, or use a clean port with `npm run lan -- --port 5175` (production: `PORT=5175 npm start`). LAN development uses strict ports instead of silently moving to another port.
+
+1. Open `http://HOST-WIFI-IP:5173/__lan` on the guest. This tiny standalone page needs no game assets or WebGL. It checks HTTP and the room WebSocket and produces a selectable report, including a **server ID** to compare on both machines. Opening a test connection does not join or create a room.
+2. If even that page times out, run this **on the guest**; use `curl.exe` instead of `curl` in Windows PowerShell:
+
+   ```sh
+   curl -v --noproxy "*" --connect-timeout 5 --max-time 10 http://HOST-WIFI-IP:5173/__lan/health
+   ```
+
+   If the guest has this repository and dependencies installed, `npm run lan:check -- http://HOST-WIFI-IP:5173` checks both HTTP and WebSockets without a browser or HTTP proxy. Share the command output. A host-side success alone does **not** prove another device can reach it.
+3. Watch the **host terminal** while retrying. It logs incoming TCP connections, page/health requests, and accepted/rejected WebSockets. **No incoming TCP log means the connection did not reach Node**: check the guest's target IP/port, VPN/proxy, host firewall/security software, and router/AP client isolation. Both devices should use a trusted, non-guest LAN. An allowed IP rejected by the app produces an HTTP response, not a silent connection timeout.
+4. On macOS, check **System Settings → Privacy & Security → Local Network** for the terminal/app running Node. This permission is separate from the firewall. If the command-line probe passes but the browser fails, check the browser's Local Network/site permissions where available, HTTPS-only mode, proxy settings, and extensions. Do not disable your firewall globally; allow the relevant app only on the trusted LAN.
+5. Both checks pass but the game fails? Open browser developer tools and share Console errors and failed Network requests. `OPENCS_LAN_DEBUG=1 npm run lan` (or `OPENCS_LAN_DEBUG=1 npm start`) additionally logs all HTTP request paths/statuses, including failed asset requests. Logs do not include room keys, controls, or gameplay snapshots; reports contain private IPs, so redact them before sharing publicly.
+
+The application cannot bypass Wi-Fi isolation, OS permissions, or a firewall. Diagnostics distinguish those reachability problems from game loading or room errors; they are not an internet relay.
+
 ## Scope
 
 - Configurable 1–10 operators per team (default five-on-five): solo bots, LAN players only, or LAN players plus bots.

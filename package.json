@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "lan": "vite --host 0.0.0.0",
+    "lan": "vite --host 0.0.0.0 --strictPort",
+    "lan:check": "tsx server/check-cli.ts",
     "start": "tsx server/index.ts",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",

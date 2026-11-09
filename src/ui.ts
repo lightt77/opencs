@@ -159,6 +159,7 @@ export class UI {
         <label class="slider-label" for="lan-key">SHARED ROOM KEY</label><input class="pack-select" id="lan-key" maxlength="6" placeholder="ABC123" autocomplete="off" />
         <button class="secondary-button rules-button" id="lan-join">JOIN ROOM</button>`}
       <p id="lan-status" class="settings-hint" role="status">${escapeHTML(lan.status)}</p>
+      <p class="settings-hint">Use the same Wi-Fi URL on the host and guests; localhost may be a different server. <a href="/__lan" target="_blank" rel="noopener">LAN connection test / debug report</a></p>
       <p class="dialog-footnote">LAN only; no matchmaking, port forwarding or accounts. The host browser runs the simulation: keep it open and in the foreground. ESC releases your mouse but does not pause a shared match. Players join before the match starts.</p>
     </section>`;
     this.overlay.querySelector('.close-button')!.addEventListener('click', () => this.closeDialog());
