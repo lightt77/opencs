@@ -24,18 +24,21 @@ npm run test:browser # Real Chromium integration tests, including pointer lock
 - Team deathmatch and round-based elimination, without an economy or bomb objective.
 - Dust II: Dust2-inspired routing with Long A/pit, short/catwalk, mid double doors, covered B tunnels, A/B landmarks, and defender-side rotations. This is a compact, single-level layout adaptation using original geometry—not an exact scale/elevation replica. A/B are landmarks, not bomb objectives. Snow and India remain compact original arenas. Longshot Range is a 320 × 420 m open sniper arena with 370 m spawn sightlines and scattered flank cover.
 - AK, M4, AWP, pistol, knife, HE, flash, and smoke.
-- Easy / medium / hard bots with perception, navigation, cover, and shared last-known enemy positions.
+- Easy / medium / hard bots with perception, shared last-known enemy positions, cover retreats, quiet crouched approaches, sprinting rotations, and physical jumps onto reachable low crates.
+- Randomized, spaced-out spawns: round starts use opposite rear zones; deathmatch respawns search the map for concealed positions away from enemies and teammates. Open arenas cannot guarantee complete concealment.
 - Locally saved preferences; entirely local matches.
 - Movement-speed and jump-gravity sliders, optional double jump, three built-in gunshot styles, and locally imported custom gunshots.
 - Floating damage numbers for your hits, including grenades; gold headshot numbers. Numbers show actual health removed, capped at the victim's remaining health.
 - Elimination intermissions wait for you to choose an AK, M4, or AWP and start the next round. Scores persist; ammunition and utility replenish.
+- Thin-cover bullet penetration, two-stage AWP optics, audible positional footsteps, and animated deaths with a killer-camera pan.
 
 ## Controls
 
 | Action | Input |
 | --- | --- |
 | Move / jump / crouch | WASD / Space / Ctrl or C |
-| Fire / scope | Left mouse / right mouse |
+| Sprint | Hold Shift while moving forward |
+| Fire / cycle AWP zoom | Left mouse / right mouse: normal zoom → 2× zoom → off |
 | Reload | R |
 | Primary / pistol / knife | 1 / 2 / 3 |
 | HE / flash / smoke | 4 / 5 / 6 |
@@ -51,11 +54,20 @@ Open **Settings** from the lobby or pause menu. Changes apply immediately and pe
 - **Movement speed:** 0.5–2.0×, applied to the player and both bot teams.
 - **Double jump:** off by default. When enabled, press Space again in the air for one extra jump; landing replenishes it. Walking off an edge allows one air jump, not two.
 - **Jump gravity:** 10–35 m/s² (default 20). Lower values mean higher, floatier jumps. Grenade gravity is unchanged.
+- **Start freeze:** 0–10 seconds (default 3), before combat begins at match/round start. **Round-end buffer:** 0–6 seconds (default 2.5), before the loadout or final-results screen. Timing preferences persist; updated durations apply at the next corresponding phase. Round loadout shows cumulative rounds and kills for both teams.
 - **Gunshot packs:** Classic (dry/metallic), Punchy (sharp attack and bass tail), and Suppressed (soft/filtered). Use **Preview gunshot** to compare your selected primary weapon. Packs affect both teams and are original procedural sounds, not sampled CS audio. The suppressed pack is cosmetic: bot hearing and weapon balance do not change.
 
 **AWP quick-switch:** Q swaps to the last equipped weapon (USP initially). Tap Q twice after a shot to switch away and back, reducing bolt recovery from 1.35 s to a minimum 0.7 s. Each quick draw takes 0.12 s. This does not replenish ammunition or bypass an empty magazine, and switching cancels an unfinished reload. Other weapons keep independent firing cooldowns.
 
-**Longshot Range:** choose an AWP for the 370 m opening sightline. Bots use sniper rifles, respect cover, and can perceive visible targets across the map. The AWP has a 700 m hitscan range, gentler damage falloff, and a stronger 12° scope on Longshot; rifle and pistol ranges are unchanged. The larger arena has appropriately extended rendering/fog distances and a coarser navigation grid to keep pathfinding lightweight.
+**Sprint / crouch / footsteps:** Shift + forward moves at 1.5× weapon speed, lowers accuracy through movement, and cancels scope. Firing stops sprinting; the remaining momentum still hurts accuracy. Hold Ctrl or C for a lower eye/hitbox, 48% speed, and quieter steps. You cannot stand into a low ceiling. Footsteps follow actual grounded distance, not held movement keys: blocked movement and airborne motion make no steps. Snow has a crunchier sound. Bots hear walking within 13 m, sprinting within 23 m, and crouching within 3 m.
+
+**AWP zoom:** right-click cycles the existing 24° view (12° on Longshot), a second level with exactly double the optical magnification (~12.13° / ~6.02°), then unscoped. Shooting, reloading, switching weapons, sprinting, and dying clear zoom. Second-stage mouse sensitivity is reduced accordingly.
+
+**Thin-cover shots:** AK/M4/AWP can penetrate thin wooden doors and thin stone sections with reduced damage. Penetration uses actual 3D travel thickness, including oblique angles, and a cumulative budget across at most two layers. AWP penetrates more than rifles; USP only penetrates very thin material; knife cannot penetrate. Thick buildings and floors stop shots. No multi-player piercing. Bots do not gain vision through walls or deliberately target unseen opponents.
+
+**Deaths:** operators fall onto their backs; lethal headshots add a short airborne, backward impulse (~0.85 m / 2.8 ft when unobstructed). Wall clearance limits knockback. Your view falls for ~0.8 s, then pans toward and zooms onto the killer over 1.5 s, before ordinary teammate spectating / deathmatch respawn. This is a procedural animation, not a full physics ragdoll. Shortening the round-end buffer can cut the cinematic short. Bots climb reachable crates up to 1.35 m, not arbitrary buildings or roofs.
+
+**Longshot Range:** choose an AWP for sightlines exceeding 370 m. Spawns are now randomized and prefer concealment, so the opening is not always a face-to-face sniper duel. Bots use sniper rifles, respect cover, and can perceive visible targets across the map. The AWP has a 700 m hitscan range, gentler damage falloff, and a stronger 12° first-stage scope on Longshot; rifle and pistol ranges are unchanged. The larger arena has appropriately extended rendering/fog distances and a coarser navigation grid to keep pathfinding lightweight.
 
 ### Import your own sound pack
 
@@ -86,13 +98,14 @@ Fonts are bundled locally (Barlow and Barlow Condensed, SIL Open Font License vi
 | `src/view.ts`, `src/models.ts` | Environment, character rigs, weapon models, effects |
 | `src/ui.ts`, `src/style.css` | Lobby, HUD, settings, pause, results |
 | `src/config.ts`, `src/math.ts` | Balance values and pure gameplay helpers |
-| `src/movement.ts`, `src/animation.ts` | Jump rules and distance-driven two-bone leg animation |
+| `src/ballistics.ts`, `src/spawns.ts` | 3D cover thickness / penetration and randomized safe spawning |
+| `src/movement.ts`, `src/animation.ts` | Stance speeds, optics, jump rules, and two-bone leg animation |
 | `src/audio.ts` | Procedural positional audio |
 | `src/custom-audio.ts` | Custom-file validation and browser-only sample persistence |
 
 Unit tests cover movement, spread, damage, map connectivity, line-of-sight, and collision. Browser tests exercise actual mouse capture, movement, shooting, reloads, utility, bot firefights, round progression, and menus. They use full headless Chromium (`channel: 'chromium'`) because the separate headless-shell build does not support pointer lock on macOS. Development builds expose `window.__OPENCS__` for integration tests; production builds do not.
 
-This is an initial playable prototype, not a recreation of Counter-Strike. Movement, balance, tactical behavior, and audio need real playtesting. Multiplayer, bomb defusal, buying, wall penetration, and advanced movement exploits are out of scope.
+This is an initial playable prototype, not a recreation of Counter-Strike. Movement, balance, tactical behavior, and audio need real playtesting. Multiplayer, bomb defusal, buying, full ragdoll physics, arbitrary-surface climbing, and advanced movement exploits are out of scope.
 
 ### Match rules
 

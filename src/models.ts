@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { TEAM_COLOR, type Team, type WeaponId } from './config';
 import { footTarget, solveLeg } from './animation';
 import { clamp, type Point } from './math';
+import { CROUCH_DROP } from './movement';
 
 const material = (color: number, roughness = .85) => new THREE.MeshStandardMaterial({ color, roughness });
 const steel = material(0x303a3c, .4);
@@ -135,11 +136,17 @@ export class Soldier {
     this.root.traverse(o => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
   }
 
-  animate(dt: number, motion: Point, alive: boolean, reloading: boolean, grounded: boolean, crouched: boolean) {
+  resetPose() {
+    this.death = this.flash = this.gaitPhase = this.gaitAmount = this.crouchAmount = 0;
+    this.body.position.set(0, 0, 0); this.body.rotation.set(0, 0, 0);
+  }
+
+  animate(dt: number, motion: Point, alive: boolean, reloading: boolean, grounded: boolean, crouched: boolean, deathAge = 0, deathHead = false) {
     this.flash = Math.max(0, this.flash - dt);
     this.gun.getObjectByName('muzzle')!.visible = this.flash > 0 && alive;
-    this.death += ((alive ? 0 : 1) - this.death) * Math.min(1, dt * 9);
-    this.body.rotation.z = -this.death * 1.45;
+    this.death = alive ? 0 : clamp(deathAge / (deathHead ? .65 : .8), 0, 1);
+    const fall = this.death * this.death * (3 - 2 * this.death);
+    this.body.rotation.z = deathHead ? 0 : -fall * .18;
     this.label.visible = alive && this.label.userData.enabled !== false;
     const speed = Math.hypot(motion.x, motion.z);
     const blend = 1 - Math.exp(-dt * 14);
@@ -151,8 +158,8 @@ export class Soldier {
     const forward = speed > .05 ? -(motion.x * Math.sin(yaw) + motion.z * Math.cos(yaw)) / speed : 1;
     const sideways = speed > .05 ? (motion.x * Math.cos(yaw) - motion.z * Math.sin(yaw)) / speed : 0;
     const bob = (1 - Math.cos(this.gaitPhase * Math.PI * 4)) * .009 * this.gaitAmount;
-    this.body.position.y = -this.death * .35 - this.crouchAmount * .33 + bob;
-    this.body.rotation.x = alive ? .04 * this.gaitAmount + this.crouchAmount * .12 : 0;
+    this.body.position.y = alive ? -this.crouchAmount * CROUCH_DROP + bob : fall * .18;
+    this.body.rotation.x = alive ? .04 * this.gaitAmount + this.crouchAmount * .12 : fall * Math.PI / 2;
     const legs = [[this.leftLeg, this.leftKnee, this.leftFoot], [this.rightLeg, this.rightKnee, this.rightFoot]];
     legs.forEach(([leg, knee, foot], index) => {
       const target = footTarget(this.gaitPhase + index * .5, this.gaitAmount, forward, sideways, this.crouchAmount, bob);

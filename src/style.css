@@ -48,7 +48,8 @@
 .damage-number{position:absolute;left:0;top:0;font:600 27px var(--heading);color:#f0efdc;text-shadow:0 2px 3px #08120d,0 0 8px #08120d;will-change:transform,opacity}
 .damage-number.is-lethal{color:#e9a28a;font-size:31px}
 .damage-number.is-headshot{color:var(--amber)}
-.round-loadout{width:510px}.round-loadout .weapons button{padding:20px 8px;font-size:12px}
+.round-loadout{width:510px;max-height:calc(100dvh - 60px);overflow:auto}.round-loadout .weapons button{padding:20px 8px;font-size:12px}
+.round-score{margin:15px 0 25px}.round-score span{font-size:48px}.round-score small{font-size:9px}
 .dialog .loadout-note{font:10px/1.8 monospace;color:#91a184;margin-bottom:25px}
 @media(max-width:640px){.settings-grid{grid-template-columns:1fr;gap:20px}.settings-dialog{max-height:calc(100dvh - 40px)}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}

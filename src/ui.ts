@@ -183,6 +183,7 @@ export class UI {
     this.overlay.innerHTML = `<section class="dialog round-loadout" role="dialog" aria-modal="true" aria-labelledby="round-loadout-title">
       <span class="eyebrow">ROUND ${g.round} COMPLETE · BLUE ${g.scores.blue} : ${g.scores.red} RED</span>
       <h2 id="round-loadout-title">NEXT ROUND LOADOUT</h2><p>${g.announcement}<br>Choose your primary for round ${g.round + 1}. No rush—the match is waiting.</p>
+      <div class="result-score round-score" aria-label="Total team scores"><span class="blue-text">${g.scores.blue}<small>BLUE ROUNDS · ${g.actors.filter(a => a.team === 'blue').reduce((sum, a) => sum + a.kills, 0)} KILLS</small></span><i>:</i><span class="red-text">${g.scores.red}<small>RED ROUNDS · ${g.actors.filter(a => a.team === 'red').reduce((sum, a) => sum + a.kills, 0)} KILLS</small></span></div>
       <div class="segments weapons" role="group" aria-label="Next round primary">${(['ak', 'm4', 'awp'] as const).map(id => `<button data-round-primary="${id}" class="${id === selected ? 'selected' : ''}" aria-pressed="${id === selected}">${WEAPONS[id].name}</button>`).join('')}</div>
       <p class="loadout-note">USP, knife, grenades, and ammunition replenish at round start. Your score is preserved.</p>
       <button class="deploy-button" id="continue-round"><span>START ROUND ${g.round + 1}</span>${arrow}</button>
@@ -216,6 +217,10 @@ export class UI {
       <label class="slider-label" for="movementSpeed">MOVEMENT SPEED <output>${s.movementSpeed.toFixed(1)}×</output></label><input id="movementSpeed" type="range" min="0.5" max="2" step="0.1" value="${s.movementSpeed}" />
       <label class="slider-label" for="jumpGravity">JUMP GRAVITY <output>${s.jumpGravity} m/s²</output></label><input id="jumpGravity" type="range" min="10" max="35" step="1" value="${s.jumpGravity}" />
       <label class="checkbox-label"><span>DOUBLE JUMP <small>Press Space again in the air for one extra jump.</small></span><input id="doubleJump" type="checkbox" ${s.doubleJump ? 'checked' : ''} /></label>
+      <h3>ROUND TIMING</h3>
+      <label class="slider-label" for="freezeTime">START FREEZE <output>${s.freezeTime}s</output></label><input id="freezeTime" type="range" min="0" max="10" step="0.5" value="${s.freezeTime}" />
+      <label class="slider-label" for="roundEndDelay">ROUND-END BUFFER <output>${s.roundEndDelay}s</output></label><input id="roundEndDelay" type="range" min="0" max="6" step="0.5" value="${s.roundEndDelay}" />
+      <p class="settings-hint">Hold Shift + forward to sprint. Hold Ctrl or C to crouch and move quietly. Round-end buffer plays before loadout/results.</p>
       <p class="settings-hint">Speed applies to both teams. Lower gravity makes jumps higher and floatier. Grenade gravity is unchanged.</p>
       </section><section aria-labelledby="audio-video-title"><h3 id="audio-video-title">AUDIO & VIDEO</h3>
       <label class="slider-label" for="volume">MASTER VOLUME <output>${s.volume}%</output></label><input id="volume" type="range" min="0" max="100" value="${s.volume}" />
@@ -229,12 +234,12 @@ export class UI {
       </section></div>
       <button class="secondary-button" id="reset-settings">RESTORE DEFAULTS</button><p class="dialog-footnote">Saved on this device. Match options stay unchanged.</p>
     </section>`;
-    for (const key of ['sensitivity', 'volume', 'fov', 'movementSpeed', 'jumpGravity'] as const) {
+    for (const key of ['sensitivity', 'volume', 'fov', 'movementSpeed', 'jumpGravity', 'freezeTime', 'roundEndDelay'] as const) {
       const input = this.overlay.querySelector<HTMLInputElement>(`#${key}`)!;
       input.addEventListener('input', () => {
         this.settings[key] = Number(input.value);
         const value = this.settings[key];
-        input.previousElementSibling!.querySelector('output')!.textContent = key === 'sensitivity' ? value.toFixed(2) : key === 'movementSpeed' ? `${value.toFixed(1)}×` : `${value}${key === 'fov' ? '°' : key === 'jumpGravity' ? ' m/s²' : '%'}`;
+        input.previousElementSibling!.querySelector('output')!.textContent = key === 'sensitivity' ? value.toFixed(2) : key === 'movementSpeed' ? `${value.toFixed(1)}×` : `${value}${key === 'fov' ? '°' : key === 'jumpGravity' ? ' m/s²' : key === 'freezeTime' || key === 'roundEndDelay' ? 's' : '%'}`;
         this.applySettings();
       });
     }
@@ -251,7 +256,7 @@ export class UI {
     this.overlay.querySelector('#preview-sound')!.addEventListener('click', () => { void this.game.sound.preview(this.settings.primary); });
     this.overlay.querySelector('#manage-sounds')!.addEventListener('click', () => this.customAudioDialog());
     this.overlay.querySelector('#reset-settings')!.addEventListener('click', () => {
-      Object.assign(this.settings, { sensitivity: DEFAULTS.sensitivity, volume: DEFAULTS.volume, fov: DEFAULTS.fov, shadows: DEFAULTS.shadows, movementSpeed: DEFAULTS.movementSpeed, doubleJump: DEFAULTS.doubleJump, jumpGravity: DEFAULTS.jumpGravity, soundPack: DEFAULTS.soundPack });
+      Object.assign(this.settings, { sensitivity: DEFAULTS.sensitivity, volume: DEFAULTS.volume, fov: DEFAULTS.fov, shadows: DEFAULTS.shadows, movementSpeed: DEFAULTS.movementSpeed, doubleJump: DEFAULTS.doubleJump, jumpGravity: DEFAULTS.jumpGravity, soundPack: DEFAULTS.soundPack, freezeTime: DEFAULTS.freezeTime, roundEndDelay: DEFAULTS.roundEndDelay });
       this.applySettings(); this.openSettings();
     });
     this.overlay.querySelector('.close-button')!.addEventListener('click', () => this.closeDialog());
@@ -322,7 +327,7 @@ export class UI {
     this.overlay.hidden = false;
     this.overlay.innerHTML = `<section class="dialog manual-dialog" role="dialog" aria-modal="true" aria-labelledby="manual-title"><div class="dialog-title"><div><span class="eyebrow">READ THE ROOM. THEN CLEAR IT.</span><h2 id="manual-title">FIELD MANUAL</h2></div><button class="close-button" aria-label="Close manual">×</button></div>
       <div class="manual-grid">${[
-        ['W A S D', 'Move'], ['SPACE', 'Jump / optional air jump'], ['CTRL / C', 'Crouch'], ['LMB', 'Fire / throw'], ['RMB', 'AWP scope'], ['R', 'Reload'], ['Q / Q Q', 'Last weapon / faster AWP cycle'], ['1 / 2 / 3', 'Primary / pistol / knife'], ['4 / 5 / 6', 'HE / flash / smoke'], ['WHEEL', 'Cycle weapons'], ['TAB', 'Scoreboard'], ['ESC', 'Pause & release mouse'],
+        ['W A S D', 'Move'], ['SHIFT + W', 'Sprint (louder footsteps)'], ['SPACE', 'Jump / optional air jump'], ['CTRL / C', 'Hold crouch / quiet movement'], ['LMB', 'Fire / throw (stops sprint)'], ['RMB', 'AWP: zoom → 2× zoom → off'], ['R', 'Reload'], ['Q / Q Q', 'Last weapon / faster AWP cycle'], ['1 / 2 / 3', 'Primary / pistol / knife'], ['4 / 5 / 6', 'HE / flash / smoke'], ['WHEEL', 'Cycle weapons'], ['TAB', 'Scoreboard'], ['ESC', 'Pause & release mouse'],
       ].map(([key, label]) => `<div><span>${label}</span><kbd>${key}</kbd></div>`).join('')}</div>
       <div class="tips"><strong>STEADY FEET. STEADY AIM.</strong><p>Stop or counter-strafe before shooting. Fire short bursts at range. Footsteps and gunfire reveal your position to bots. Smoke blocks their sight; flashbangs disrupt their aim. Friendly fire is off, but your own HE can hurt you.</p></div>
       <p class="dialog-footnote">Elimination: first to ${ROUND_LIMIT} rounds. On timeout, surviving players then total health decide the round. A draw awards no point. Matches end after 15 rounds.</p>
@@ -368,7 +373,7 @@ export class UI {
     this.set('map-name', g.arena.name); this.set('blue-score', String(g.scores.blue)); this.set('red-score', String(g.scores.red));
     const area = g.arena.areas?.filter(a => Math.hypot(a.x - p.position.x, a.z - p.position.z) < a.radius).sort((a, b) => Math.hypot(a.x - p.position.x, a.z - p.position.z) - Math.hypot(b.x - p.position.x, b.z - p.position.z))[0];
     this.set('location-name', area?.name ?? 'FRIENDLIES ONLY');
-    this.set('clock', timeString(g.phase === 'warmup' ? g.phaseTime : g.remaining));
+    this.set('clock', timeString(g.phase !== 'live' ? g.phaseTime : g.remaining));
     e['clock'].classList.toggle('time-low', g.remaining < 20 && g.phase === 'live');
     this.set('match-label', g.settings.mode === 'tdm' ? `FIRST TO ${TDM_LIMIT}` : `ROUND ${g.round} · FIRST TO ${ROUND_LIMIT}`);
     this.set('fps', `${Math.round(g.fps)} FPS`); this.set('difficulty-label', g.settings.difficulty.toUpperCase());
@@ -377,7 +382,7 @@ export class UI {
     this.set('weapon-name', WEAPONS[p.weapon].name);
     this.set('clip', p.weapon === 'knife' ? '∞' : String(p.ammo[p.weapon].clip));
     this.set('reserve', String(p.ammo[p.weapon].reserve));
-    this.set('weapon-status', p.reload > 0 ? `RELOADING · ${p.reload.toFixed(1)}s` : p.immunity > 0 ? 'SPAWN PROTECTION' : p.weapon === 'awp' ? 'RMB SCOPE · Q Q QUICK CYCLE' : isGrenade(p.weapon) ? 'LMB TO THROW' : p.weapon === 'knife' ? 'CLOSE QUARTERS' : 'STOP TO SHOOT ACCURATELY');
+    this.set('weapon-status', p.sprinting ? 'SPRINTING · FIRE TO READY WEAPON' : p.body.crouched ? 'CROUCHED · QUIET STEPS' : p.reload > 0 ? `RELOADING · ${p.reload.toFixed(1)}s` : p.immunity > 0 ? 'SPAWN PROTECTION' : p.weapon === 'awp' ? `RMB: ZOOM ${g.scopeLevel}/2 · Q Q QUICK CYCLE` : isGrenade(p.weapon) ? 'LMB TO THROW' : p.weapon === 'knife' ? 'CLOSE QUARTERS' : 'STOP TO SHOOT ACCURATELY');
     this.set('announcement', g.phase === 'warmup' ? `GET READY · ${Math.ceil(g.phaseTime)}` : g.announcementTime > 0 ? g.announcement : '');
     e['announcement'].classList.toggle('visible', !!e['announcement'].textContent);
     const feed = g.kills.filter(k => g.time - k.time < 7).map(k => `<div><b class="${k.team}-text">${k.killer}</b><span>${WEAPONS[k.weapon].short}${k.head ? ' ⊕' : ''}</span><b class="${k.team === 'blue' ? 'red' : 'blue'}-text">${k.victim}</b></div>`).join('');

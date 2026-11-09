@@ -51,16 +51,20 @@ export class CharacterBody {
   teleport(point: Point) {
     const p = { x: point.x, y: this.height + .05, z: point.z };
     this.body.setTranslation(p, true); this.body.setNextKinematicTranslation(p);
+    this.world.propagateModifiedBodyPositionsToColliders();
     this.grounded = false;
   }
 
   crouch(enabled: boolean) {
     if (enabled === this.crouched) return;
-    // Launch maps have ample headroom; crouching keeps the same foot position.
     const feet = this.position();
+    // Don't let releasing crouch expand the player into overhead cover.
+    if (!enabled && this.world.intersectionWithShape({ x: feet.x, y: feet.y + 1.44, z: feet.z }, { x: 0, y: 0, z: 0, w: 1 }, new RAPIER.Cuboid(.3, .27, .3), RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC, 0x00020001, this.collider)) return;
     this.crouched = enabled; this.height = enabled ? .59 : .86;
     this.collider.setShape(new RAPIER.Capsule(enabled ? .27 : .54, .32));
     this.body.setTranslation({ x: feet.x, y: feet.y + this.height, z: feet.z }, true);
+    this.body.setNextKinematicTranslation({ x: feet.x, y: feet.y + this.height, z: feet.z });
+    this.world.propagateModifiedBodyPositionsToColliders();
   }
 
   move(x: number, y: number, z: number) {

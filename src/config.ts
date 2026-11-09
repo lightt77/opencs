@@ -13,6 +13,7 @@ export interface Settings {
   sensitivity: number; volume: number; fov: number; shadows: boolean;
   movementSpeed: number; doubleJump: boolean; jumpGravity: number;
   soundPack: SoundPack;
+  freezeTime: number; roundEndDelay: number;
 }
 
 export const DEFAULTS: Settings = {
@@ -20,6 +21,7 @@ export const DEFAULTS: Settings = {
   sensitivity: 1, volume: 65, fov: 85, shadows: true,
   movementSpeed: 1, doubleJump: false, jumpGravity: 20,
   soundPack: 'classic',
+  freezeTime: 3, roundEndDelay: 2.5,
 };
 
 export function loadSettings(): Settings {
@@ -38,6 +40,8 @@ export function loadSettings(): Settings {
       doubleJump: typeof raw.doubleJump === 'boolean' ? raw.doubleJump : DEFAULTS.doubleJump,
       jumpGravity: finiteRange(raw.jumpGravity, 10, 35, DEFAULTS.jumpGravity),
       soundPack: ['classic', 'punchy', 'suppressed', 'custom'].includes(raw.soundPack) ? raw.soundPack : DEFAULTS.soundPack,
+      freezeTime: finiteRange(raw.freezeTime, 0, 10, DEFAULTS.freezeTime),
+      roundEndDelay: finiteRange(raw.roundEndDelay, 0, 6, DEFAULTS.roundEndDelay),
     };
   } catch { return { ...DEFAULTS }; }
 }

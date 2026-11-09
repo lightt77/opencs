@@ -1,4 +1,5 @@
 import { clamp } from './math';
+import { CROUCH_DROP } from './movement';
 
 export interface LegPose { hip: number; knee: number; ankle: number; roll: number }
 
@@ -21,7 +22,7 @@ export function footTarget(phase: number, amount: number, forward: number, sidew
   const lift = swing ? Math.sin(t * Math.PI) * .16 * amount : 0;
   return {
     x: stride * sideways * .23 * amount,
-    y: -.73 + crouch * .33 + lift - bob,
+    y: -.73 + crouch * CROUCH_DROP + lift - bob,
     z: stride * forward * .3 * amount,
   };
 }

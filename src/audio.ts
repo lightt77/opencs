@@ -143,7 +143,10 @@ export class Sound {
     if (sample) this.playSample(sample, id);
   }
   async preview(id: WeaponId) { await this.unlock(); this.shot(id); }
-  step(position?: Point, snow = false) { this.burst(.065, snow ? 1400 : 700, .13, position, 70); }
+  step(position?: Point, snow = false, sprinting = false, crouched = false) {
+    const volume = crouched ? .065 : sprinting ? .42 : .26;
+    this.burst(snow ? .12 : .085, snow ? 1900 : 1000, volume, position, snow ? 85 : 105, { toneLevel: snow ? .25 : .55, filterEnd: 180 });
+  }
   reload() { this.burst(.14, 3600, .2, undefined, 260); }
   click() { this.burst(.045, 1800, .2, undefined, 400); }
   hit(head: boolean) { this.burst(.055, head ? 5500 : 2300, .24, undefined, head ? 1600 : 700); }

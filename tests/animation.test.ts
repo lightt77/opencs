@@ -23,4 +23,11 @@ describe('articulated walk cycle', () => {
     const strafe = footTarget(.1, 1, 0, 1, 0, 0);
     expect(Math.abs(strafe.x)).toBeGreaterThan(0); expect(strafe.z).toBeCloseTo(0);
   });
+  it('keeps crouched boots planted while lowering the head to crouch eye height', () => {
+    const standing = footTarget(0, 0, 1, 0, 0, 0), crouched = footTarget(0, 0, 1, 0, 1, 0);
+    expect(crouched.y - standing.y).toBeCloseTo(.54);
+    const pose = solveLeg(crouched.x, crouched.y, crouched.z);
+    expect(Object.values(pose).every(Number.isFinite)).toBe(true);
+    expect(pose.hip + pose.knee + pose.ankle).toBeCloseTo(0);
+  });
 });

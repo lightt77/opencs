@@ -19,6 +19,11 @@ describe('saved settings', () => {
     stored({ movementSpeed: 1.5, jumpGravity: 14, doubleJump: true, map: 'longshot' });
     expect(loadSettings()).toMatchObject({ movementSpeed: 1.5, jumpGravity: 14, doubleJump: true, map: 'longshot' });
   });
+  it('restores and bounds round timers, including zero freeze', () => {
+    stored({ freezeTime: 0, roundEndDelay: 3.5 }); expect(loadSettings()).toMatchObject({ freezeTime: 0, roundEndDelay: 3.5 });
+    stored({ freezeTime: 99, roundEndDelay: -3 }); expect(loadSettings()).toMatchObject({ freezeTime: 10, roundEndDelay: 0 });
+    stored({ freezeTime: '2', roundEndDelay: null }); expect(loadSettings()).toMatchObject({ freezeTime: 3, roundEndDelay: 2.5 });
+  });
   it('restores known sound packs and safely rejects unknown pack IDs', () => {
     stored({ soundPack: 'punchy' }); expect(loadSettings().soundPack).toBe('punchy');
     stored({ soundPack: 'suppressed' }); expect(loadSettings().soundPack).toBe('suppressed');

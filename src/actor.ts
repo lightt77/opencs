@@ -3,12 +3,14 @@ import { AWP_QUICK_INTERVAL, inventory, WEAPONS, type Primary, type Team, type W
 import type { CharacterBody } from './physics';
 import type { Point } from './math';
 import { Soldier } from './models';
+import { CROUCH_DROP } from './movement';
 
 export interface Ammo { clip: number; reserve: number }
 export interface Brain {
   path: Point[]; goal?: Point; target: number; acquired: number; decision: number;
   repath: number; memory?: { point: Point; time: number }; burst: number; pause: number;
   hold: number; stuck: number; previous: Point; aimHeight: number; role: 'push' | 'flank' | 'hold';
+  coverUntil: number; nextClimb: number; climb?: { approach: Point; top: Point; height: number; until: number; jumping: boolean };
 }
 
 export class Actor {
@@ -39,6 +41,11 @@ export class Actor {
   shots = 0;
   shotAge = 0;
   step = 0;
+  sprinting = false;
+  deathAge = 0;
+  deathHead = false;
+  deathOrigin = new THREE.Vector3();
+  deathDirection = new THREE.Vector3();
   brain: Brain;
   model: Soldier;
 
@@ -52,11 +59,12 @@ export class Actor {
       path: [], target: -1, acquired: 0, decision: 0, repath: 0, burst: 0, pause: 0,
       hold: 0, stuck: 0, previous: { x: 0, z: 0 }, aimHeight: 1.15,
       role: (['push', 'flank', 'hold'] as const)[id % 3],
+      coverUntil: 0, nextClimb: 0,
     };
     this.refill(); this.sync();
   }
 
-  get eyeHeight() { return this.body.crouched ? 1.02 : 1.56; }
+  get eyeHeight() { return this.body.crouched ? 1.56 - CROUCH_DROP : 1.56; }
   eye() { return this.position.clone().add(new THREE.Vector3(0, this.eyeHeight, 0)); }
   get speed() { return Math.hypot(this.velocity.x, this.velocity.z); }
   get weapons() { return inventory(this.primary); }
@@ -67,14 +75,17 @@ export class Actor {
 
   reset(point: Point, immunity: number) {
     this.alive = true; this.health = 100; this.velocity.set(0, 0, 0);
+    this.sprinting = false; this.step = 0; this.deathAge = 0; this.deathHead = false;
+    this.model.resetPose();
     this.flash = 0; this.cooldowns = {}; this.reload = 0; this.switching = .25;
     this.previousWeapon = 'pistol'; this.quickAwpCycle = false; this.awpShotAge = Infinity; this.jumpsUsed = 0;
     this.shots = 0; this.shotAge = 0; this.immunity = immunity;
     this.weapon = this.primary; this.refill();
-    this.body.enabled(true); this.body.crouch(false); this.body.teleport(point);
+    this.body.enabled(true); this.body.teleport(point); this.body.crouch(false);
     this.yaw = this.team === 'blue' ? 0 : Math.PI; this.pitch = 0;
     this.brain.path = []; this.brain.target = -1; this.brain.memory = undefined;
     this.brain.goal = undefined; this.brain.repath = 0; this.brain.stuck = 0; this.brain.burst = 0; this.brain.pause = 0; this.brain.hold = 0;
+    this.brain.coverUntil = 0; this.brain.climb = undefined; this.brain.nextClimb = 0;
     this.sync(); this.previousPosition.copy(this.position);
     this.model.root.visible = !this.human;
   }
