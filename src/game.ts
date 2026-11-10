@@ -20,6 +20,7 @@ import { Lan } from './lan';
 import { cleanControls, type Action, type Controls, type Operator, type Room } from './lan-protocol';
 import { randomMap } from './rotation';
 import { surfaceHeight } from './map-schema';
+import { AWP_BOLT_DURATION } from './weapon-animation';
 
 export interface Kill { killer: string; victim: string; team: Team; weapon: WeaponId; head: boolean; time: number }
 interface Grenade { body: RAPIER.RigidBody; mesh: THREE.Object3D; owner: Actor; type: 'he' | 'flash' | 'smoke'; fuse: number }
@@ -76,8 +77,25 @@ export class Game {
   fps = 60;
   scoreboard = false;
   scopeLevel = 0;
+  private pendingScopeLevel = 0;
   get scoped() { return this.scopeLevel > 0; }
-  set scoped(value: boolean) { this.scopeLevel = value ? 1 : 0; }
+  set scoped(value: boolean) { this.pendingScopeLevel = 0; this.scopeLevel = value ? 1 : 0; }
+
+  private beginAwpScopeReturn() {
+    this.pendingScopeLevel = this.scopeLevel;
+    this.scopeLevel = 0; // Hide the optic for the bolt cycle without forgetting its zoom.
+  }
+
+  private updateAwpScopeReturn() {
+    if (!this.pendingScopeLevel) return;
+    const p = this.player;
+    if (!p?.alive || p.weapon !== 'awp' || p.reload > 0 || p.switching > 0 || p.sprinting || this.phase !== 'live' || !['playing', 'paused'].includes(this.screen)) {
+      this.pendingScopeLevel = 0; return;
+    }
+    if (p.awpShotAge >= AWP_BOLT_DURATION) {
+      this.scopeLevel = this.pendingScopeLevel; this.pendingScopeLevel = 0;
+    }
+  }
   deathCamera?: { killer: number; time: number; origin: THREE.Vector3; rotation: THREE.Quaternion; fov: number };
   private pendingFinish?: Team | 'draw';
   private spawnPools = { blue: [] as Point[], red: [] as Point[] };
@@ -121,7 +139,9 @@ export class Game {
     this.lan.onSnapshot = state => { if (this.network && !this.lan.host) this.restoreSnapshot(state); };
     this.lan.onPrimary = (id, primary) => {
       const index = this.members.get(id);
-      if (this.lan.host && this.screen === 'loadout' && index !== undefined && this.settings.allowedWeapons.includes(primary)) this.actors[index].primary = primary;
+      if (!this.lan.host || index === undefined) return;
+      if (this.settings.mode === 'tdm') this.setDeathmatchPrimary(this.actors[index], primary);
+      else if (this.screen === 'loadout' && this.settings.allowedWeapons.includes(primary)) this.actors[index].primary = primary;
     };
     this.lan.onLeft = id => {
       const index = this.members.get(id); if (index === undefined) return;
@@ -217,6 +237,7 @@ export class Game {
   }
 
   private cleanup() {
+    this.scoped = false;
     if (this.networkTimer !== undefined) window.clearInterval(this.networkTimer);
     this.networkTimer = undefined; this.network = false; this.remoteControls.clear(); this.events = []; this.inactive.clear();
     for (const mesh of this.replicaGrenades) { this.view.scene.remove(mesh); disposeTree(mesh); } this.replicaGrenades = [];
@@ -242,6 +263,30 @@ export class Game {
   resume() {
     if (this.screen !== 'paused') return;
     void this.sound.unlock(); this.screen = 'playing'; this.clearInput(); this.onScreenChange?.(); this.capture();
+  }
+
+  changeDeathmatchPrimary(primary: Primary) {
+    if (!this.canChangeDeathmatchPrimary(primary)) return false;
+    if (this.network && !this.lan.host) {
+      this.cancelGrenade(); this.scoped = false;
+      this.lan.send({ type: 'primary', primary });
+      return true;
+    }
+    return this.setDeathmatchPrimary(this.player, primary);
+  }
+
+  private canChangeDeathmatchPrimary(primary: Primary) {
+    return this.settings.mode === 'tdm' && (this.screen === 'playing' || this.screen === 'paused') && this.phase !== 'between'
+      && PRIMARIES.includes(primary) && this.settings.allowedWeapons.includes(primary);
+  }
+
+  private setDeathmatchPrimary(actor: Actor, primary: Primary) {
+    if (!this.canChangeDeathmatchPrimary(primary) || !actor.human || this.inactive.has(actor.id) || !actor.changePrimary(primary)) return false;
+    if (actor === this.player) {
+      this.settings.primary = primary; this.cancelGrenade(); this.scoped = false;
+      this.recoilPitch = this.recoilYaw = this.kick = 0; this.sound.click();
+    }
+    return true;
   }
 
   continueRound(primary: Primary) {
@@ -403,7 +448,7 @@ export class Game {
           this.kick = 1; this.shotFlash = .05; const spec = WEAPONS[event.weapon];
           this.recoilPitch = Math.min(.18, this.recoilPitch + spec.recoil * (1 + actor.shots * .06));
           this.recoilYaw += Math.sin(actor.shots * 1.7) * spec.recoil * .4;
-          if (event.weapon === 'awp') this.scoped = false;
+          if (event.weapon === 'awp') this.beginAwpScopeReturn();
         }
       } else if (event.kind === 'throw' && actor) {
         actor.throwAge = 0;
@@ -439,6 +484,7 @@ export class Game {
     } else if (desired === 'playing' && (this.screen === 'loadout' || this.screen === 'finished')) {
       this.screen = document.pointerLockElement === this.view.canvas ? 'playing' : 'paused'; this.onScreenChange?.();
     } else if (changedRotation && this.screen === 'finished') this.onScreenChange?.();
+    this.updateAwpScopeReturn();
   }
 
   private action(action: Action) {
@@ -463,6 +509,7 @@ export class Game {
     window.addEventListener('keydown', event => {
       if (event.code === 'Escape' && this.screen === 'finished') { this.release(); return; }
       if (this.screen !== 'playing') return;
+      if (event.code === 'KeyB' && !event.repeat && this.settings.mode === 'tdm') { event.preventDefault(); this.pause(); return; }
       if (['Tab', 'Space', 'ControlLeft', 'ControlRight', 'ArrowUp', 'ArrowDown'].includes(event.code)) event.preventDefault();
       this.keys.add(event.code);
       if (event.code === 'Tab') this.scoreboard = true;
@@ -492,7 +539,7 @@ export class Game {
           if (this.phase === 'live' && p.ammo[p.weapon].clip > 0 && p.grenadeCooldown <= 0 && p.switching <= 0) this.grenadePrime = { type: p.weapon, start: this.time };
         } else this.trigger = true;
       }
-      if (event.button === 2 && this.player.alive && this.player.weapon === 'awp' && !this.player.reload && !this.player.sprinting) { this.scopeLevel = (this.scopeLevel + 1) % 3; this.sound.zoom(); }
+      if (event.button === 2 && this.player.alive && this.player.weapon === 'awp' && !this.player.reload && !this.player.sprinting) { this.pendingScopeLevel = 0; this.scopeLevel = (this.scopeLevel + 1) % 3; this.sound.zoom(); }
     });
     window.addEventListener('mouseup', event => {
       if (event.button !== 0) return;
@@ -617,6 +664,7 @@ export class Game {
     }
     for (const smoke of this.smokes) smoke.life -= dt;
     this.smokes = this.smokes.filter(s => s.life > 0);
+    this.updateAwpScopeReturn();
   }
 
   private updatePlayer(dt: number, p = this.player, controls?: Controls) {
@@ -677,7 +725,7 @@ export class Game {
       this.kick = 1; this.shotFlash = id === 'knife' ? 0 : .05;
       this.recoilPitch = Math.min(.18, this.recoilPitch + spec.recoil * (1 + actor.shots * .06));
       this.recoilYaw += Math.sin(actor.shots * 1.7) * spec.recoil * .4;
-      if (id === 'awp') this.scoped = false;
+      if (id === 'awp') this.beginAwpScopeReturn();
     }
     this.sound.shot(id, actor === this.player ? undefined : actor.position);
     this.hear(actor, id === 'knife' ? 5 : id === 'awp' ? 150 : 38);

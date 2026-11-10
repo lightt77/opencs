@@ -203,7 +203,7 @@ export class UI {
       <div class="damage-direction" id="damage-direction">⌃</div>
       <div class="death-card" id="death-card" hidden></div>
       <div class="bottom-hud"><div class="health-block"><span class="health-icon">+</span><div><strong id="health">100</strong><span>HEALTH</span></div><div class="health-bar"><i id="health-bar"></i></div></div>
-        <div class="quick-controls"><span><kbd>Q</kbd> QUICK SWITCH</span><span><kbd>R</kbd> RELOAD</span><span><kbd>TAB</kbd> SCORE</span><span><kbd>ESC</kbd> PAUSE</span></div>
+        <div class="quick-controls"><span id="loadout-hint"><kbd>B</kbd> CHANGE PRIMARY</span><span><kbd>Q</kbd> QUICK SWITCH</span><span><kbd>R</kbd> RELOAD</span><span><kbd>TAB</kbd> SCORE</span><span><kbd>ESC</kbd> PAUSE</span></div>
         <div class="ammo-block"><span id="weapon-name">AK-47</span><div><strong id="clip">30</strong><span>/ <b id="reserve">90</b></span></div><small id="weapon-status">7.62 × 39 MM</small></div>
       </div>
       <div class="weapon-slots" id="weapon-slots"></div>
@@ -227,11 +227,21 @@ export class UI {
   }
 
   private pauseHTML() {
+    const g = this.game;
     this.overlay.innerHTML = `<section class="dialog pause-dialog"><span class="eyebrow">TAKE A BREATHER</span><h2>${this.game.network ? 'MOUSE RELEASED' : 'MATCH PAUSED'}</h2><p>${this.game.network ? 'The LAN match is still live. Your operator can be attacked while this menu is open.' : 'The battlefield can wait.<br>Your match is paused while the mouse is released.'}</p>
+      ${g.settings.mode === 'tdm' ? `<h3>DEATHMATCH PRIMARY</h3><div class="segments weapons" role="group" aria-label="Deathmatch primary">${PRIMARIES.map(id => `<button data-deathmatch-primary="${id}" ${g.settings.allowedWeapons.includes(id) && g.phase !== 'between' ? '' : 'disabled'} class="${g.player.primary === id ? 'selected' : ''}" aria-pressed="${g.player.primary === id}">${WEAPONS[id].name}</button>`).join('')}</div><p class="loadout-note">Choose a primary to equip now, or on your next respawn if dead. Switching back preserves ammunition and fire cooldowns; health and utility do not refill. ${PRIMARIES.some(id => g.settings.allowedWeapons.includes(id)) ? 'Room weapon restrictions apply.' : 'No primary weapons are enabled in this match.'}</p>` : ''}
       <button class="deploy-button" id="resume"><span>BACK IN THE FIGHT</span>${arrow}</button>
       <div class="pause-actions"><button class="secondary-button" id="pause-settings">SETTINGS</button><button class="secondary-button" id="pause-controls">CONTROLS</button></div>
       <button class="text-button exit-button" id="leave">LEAVE MATCH</button>
     </section>`;
+    this.overlay.querySelectorAll<HTMLButtonElement>('[data-deathmatch-primary]').forEach(button => button.addEventListener('click', () => {
+      const primary = button.dataset.deathmatchPrimary as Settings['primary'];
+      if (!g.changeDeathmatchPrimary(primary)) return;
+      this.settings.primary = primary; this.save();
+      this.overlay.querySelectorAll<HTMLButtonElement>('[data-deathmatch-primary]').forEach(b => {
+        const active = b.dataset.deathmatchPrimary === primary; b.classList.toggle('selected', active); b.setAttribute('aria-pressed', String(active));
+      });
+    }));
     this.overlay.querySelector('#resume')!.addEventListener('click', () => this.game.resume());
     this.overlay.querySelector('#pause-settings')!.addEventListener('click', () => this.openSettings());
     this.overlay.querySelector('#pause-controls')!.addEventListener('click', () => this.controls());
@@ -467,7 +477,7 @@ export class UI {
     this.overlay.hidden = false;
     this.overlay.innerHTML = `<section class="dialog manual-dialog" role="dialog" aria-modal="true" aria-labelledby="manual-title"><div class="dialog-title"><div><span class="eyebrow">READ THE ROOM. THEN CLEAR IT.</span><h2 id="manual-title">FIELD MANUAL</h2></div><button class="close-button" aria-label="Close manual">×</button></div>
       <div class="manual-grid">${[
-        ['W A S D', 'Move'], ['SHIFT + W', 'Sprint (louder footsteps)'], ['SPACE', 'Jump / optional air jump'], ['CTRL / C', 'Hold crouch / quiet movement'], ['LMB', 'Fire / hold to charge grenade, release to throw'], ['RMB', 'AWP: zoom → 2× zoom → off'], ['R', 'Reload'], ['Q / Q Q', 'Last weapon / faster AWP cycle'], ['1 — 6', 'Equip allowed inventory slot (see HUD)'], ['WHEEL', 'Cycle weapons'], ['TAB', 'Scoreboard'], ['ESC', 'Pause & release mouse'],
+        ['W A S D', 'Move'], ['SHIFT + W', 'Sprint (louder footsteps)'], ['SPACE', 'Jump / optional air jump'], ['CTRL / C', 'Hold crouch / quiet movement'], ['LMB', 'Fire / hold to charge grenade, release to throw'], ['RMB', 'AWP: zoom → 2× zoom → off'], ['R', 'Reload'], ['Q / Q Q', 'Last weapon / faster AWP cycle'], ['1 — 6', 'Equip allowed inventory slot (see HUD)'], ['WHEEL', 'Cycle carried weapons'], ['B', 'Change deathmatch primary (also in pause menu)'], ['TAB', 'Scoreboard'], ['ESC', 'Pause & release mouse'],
       ].map(([key, label]) => `<div><span>${label}</span><kbd>${key}</kbd></div>`).join('')}</div>
       <div class="tips"><strong>STEADY FEET. STEADY AIM.</strong><p>Stop or counter-strafe before shooting. Fire short bursts at range. Footsteps and gunfire reveal your position to bots. Smoke blocks their sight; flashbangs disrupt their aim. Friendly fire is off, but your own HE can hurt you.</p></div>
       <p class="dialog-footnote">Elimination: first to ${ROUND_LIMIT} rounds. On timeout, surviving players then total health decide the round. A draw awards no point. Matches end after 15 rounds.</p>
@@ -497,6 +507,7 @@ export class UI {
     const g = this.game, p = g.player;
     if (!p || g.screen === 'menu') return;
     const e = this.hudElements;
+    e['loadout-hint'].hidden = g.settings.mode !== 'tdm';
     const rotation = this.overlay.querySelector('#rotation-status');
     if (rotation && g.nextMap) rotation.textContent = `NEXT: ${MAPS[g.nextMap].name} · ${Math.ceil(g.rotationRemaining)}s`;
     const damage = Math.max(0, 1 - (g.time - g.lastDamage) / .65);

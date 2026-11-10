@@ -1,9 +1,11 @@
 import type { Object3D } from 'three';
 import { clamp } from './math';
 
+export const AWP_BOLT_DURATION = .72;
+
 export function awpAction(age: number) {
   const kick = age >= 0 && age < .24 ? (1 - age / .24) ** 2 : 0;
-  const cycle = age > .14 && age < .72 ? Math.sin((age - .14) / .58 * Math.PI) : 0;
+  const cycle = age > .14 && age < AWP_BOLT_DURATION ? Math.sin((age - .14) / (AWP_BOLT_DURATION - .14) * Math.PI) : 0;
   return { kick, cycle, bolt: clamp((age - .2) / .12, 0, 1) * (1 - clamp((age - .45) / .15, 0, 1)) };
 }
 

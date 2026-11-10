@@ -121,11 +121,14 @@ Pre-feature checkpoint: annotated Git tag **`v0.2.1`** points to the LAN-diagnos
 | Primary / pistol / knife | 1 / 2 / 3 |
 | HE / flash / smoke | 4 / 5 / 6 |
 | Cycle weapons | Mouse wheel |
+| Change deathmatch primary (AK / M4 / AWP) | B, or Esc → Deathmatch Primary |
 | Previous weapon / faster AWP cycle | Q / Q Q after firing |
 | Scoreboard | Hold Tab |
 | Pause / release mouse | Esc |
 
 Weapon slots compress when restrictions remove equipment: use the HUD's numbered slots or mouse wheel rather than assuming the default keys above.
+
+In deathmatch, **B** opens the pause/loadout menu. Select an allowed AK, M4 or AWP, then click **Back in the Fight**. The new primary equips immediately while alive, or at your next respawn if dead, and persists through respawns/auto map rotation. This works for hosts and guests in LAN; the host validates changes, and the match stays live while the menu is open. Switching back preserves that gun's ammo and fire cooldown; it does not heal you or refill sidearms/grenades. Normal timed resupply still applies. Elimination keeps its between-round loadout rules.
 
 ### Movement and sound preferences
 
@@ -146,7 +149,7 @@ Open **Settings** from the lobby or pause menu. Preferences persist locally. Sol
 
 **Sprint / crouch / footsteps:** Shift + forward moves at 1.5× weapon speed, lowers accuracy through movement, and cancels scope. Firing stops sprinting; the remaining momentum still hurts accuracy. Hold Ctrl or C for a lower eye/hitbox, 48% speed, and quieter steps. You cannot stand into a low ceiling. Footsteps follow actual grounded distance, not held movement keys: blocked movement and airborne motion make no steps. Snow has a crunchier sound. Bots hear walking within 13 m, sprinting within 23 m, and crouching within 3 m.
 
-**AWP zoom:** right-click cycles the existing 24° view (12° on Longshot), a second level with exactly double the optical magnification (~12.13° / ~6.02°), then unscoped. Shooting, reloading, switching weapons, sprinting, and dying clear zoom. Second-stage mouse sensitivity is reduced accordingly.
+**AWP zoom:** right-click cycles the existing 24° view (12° on Longshot), a second level with exactly double the optical magnification (~12.13° / ~6.02°), then unscoped. A scoped shot temporarily unscopes for the bolt animation, then returns to the same zoom level after ~0.72 s in solo and LAN. Unscoped shots stay unscoped. Reloading, switching weapons, sprinting, dying, or manually changing zoom cancels the automatic return. Second-stage mouse sensitivity is reduced accordingly.
 
 **Wall shots:** Settings → Match Weapon Rules → Bullet Wall Penetration defaults to **All Walls**, allowing firearm shots through ordinary walls/buildings with reduced damage. Actual 3D thickness, material, weapon, angle, and additional layers reduce damage, down to a 2.5% minimum multiplier. AWP penetrates best; USP loses more damage. **Thin Cover Only** retains the original cumulative thickness budget/two-layer cap; **Off** blocks every wall hit. Floors always stop bullets; knife never penetrates. No multi-player piercing. Bots do not gain vision through walls or deliberately target unseen opponents.
 

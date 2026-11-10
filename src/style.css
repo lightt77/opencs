@@ -53,6 +53,7 @@
 .round-loadout{width:510px;max-height:calc(100dvh - 60px);overflow:auto}.round-loadout .weapons button{padding:20px 8px;font-size:12px}
 .round-score{margin:15px 0 25px}.round-score span{font-size:48px}.round-score small{font-size:9px}
 .dialog .loadout-note{font:10px/1.8 monospace;color:#91a184;margin-bottom:25px}
+.pause-dialog{max-height:calc(100dvh - 60px);overflow:auto}.pause-dialog h3{font:10px monospace;letter-spacing:1px;color:var(--amber);margin:0 0 14px}.pause-dialog .weapons button{padding:16px 8px}
 @media(max-width:640px){.settings-grid{grid-template-columns:1fr;gap:20px}.settings-dialog{max-height:calc(100dvh - 40px)}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 .rules-button{width:100%;margin:0 0 18px;font-size:9px;line-height:1.6}.segments button:disabled{opacity:.3}

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { AWP_QUICK_INTERVAL, grenadeLoadout, inventory, WEAPON_IDS, WEAPONS, isGrenade, type Primary, type Team, type WeaponId } from './config';
+import { AWP_QUICK_INTERVAL, grenadeLoadout, inventory, PRIMARIES, WEAPON_IDS, WEAPONS, isGrenade, type Primary, type Team, type WeaponId } from './config';
 import type { CharacterBody } from './physics';
 import type { Point } from './math';
 import { Soldier } from './models';
@@ -37,6 +37,7 @@ export class Actor {
   grenadeCooldown = 0;
   private cooldowns: Partial<Record<WeaponId, number>> = {};
   private quickAwpCycle = false;
+  private suppliedPrimaries = new Set<Primary>();
   awpShotAge = Infinity;
   throwAge = Infinity;
   jumpsUsed = 0;
@@ -83,9 +84,24 @@ export class Actor {
   }
 
   refill() {
+    this.suppliedPrimaries = new Set([this.primary]);
     const grenades = grenadeLoadout(this.allowedWeapons, this.grenadeCapacity);
     for (const id of WEAPON_IDS) this.ammo[id] = { clip: !this.weapons.includes(id) ? 0 : isGrenade(id) ? grenades[id] : WEAPONS[id].magazine, reserve: this.weapons.includes(id) ? WEAPONS[id].reserve : 0 };
     this.refillTimers = {};
+  }
+
+  changePrimary(primary: Primary) {
+    if (!PRIMARIES.includes(primary) || !this.allowedWeapons.includes(primary)) return false;
+    this.primary = primary;
+    if (!this.alive) return true; // The next respawn supplies/equips the selection.
+    if (!this.suppliedPrimaries.has(primary)) {
+      this.ammo[primary] = { clip: WEAPONS[primary].magazine, reserve: WEAPONS[primary].reserve };
+      this.suppliedPrimaries.add(primary);
+    }
+    this.equip(primary);
+    if (!this.weapons.includes(this.previousWeapon)) this.previousWeapon = this.weapons.find(id => id !== primary) ?? primary;
+    this.quickAwpCycle = false;
+    return true;
   }
 
   scheduleRefill(id: WeaponId, delay: number) {
@@ -98,7 +114,7 @@ export class Actor {
       this.refillTimers[id]! -= dt;
       if (this.refillTimers[id]! > 1e-6) continue;
       delete this.refillTimers[id];
-      if (!this.weapons.includes(id)) continue;
+      if (!this.weapons.includes(id) && !(this.suppliedPrimaries.has(id as Primary) && this.allowedWeapons.includes(id))) continue;
       this.ammo[id] = { clip: isGrenade(id) ? grenades[id] : WEAPONS[id].magazine, reserve: WEAPONS[id].reserve };
       if (id === this.weapon) this.reload = 0;
     }

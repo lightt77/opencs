@@ -58,6 +58,48 @@ describe('deathmatch resupply', () => {
   });
 });
 
+describe('deathmatch primary changes', () => {
+  function equipped(): Actor {
+    const a = actor();
+    Object.assign(a, { alive: true, weapon: 'ak', previousWeapon: 'pistol', health: 37, cooldowns: {}, model: { equip: vi.fn() }, awpShotAge: .1 });
+    return a;
+  }
+
+  it('replaces only the primary, cancels reloading, and keeps a valid quick-switch target', () => {
+    const a = equipped(); a.ammo.pistol.clip = 5; a.ammo.he.clip = 0; a.reload = 2;
+    expect(a.changePrimary('m4')).toBe(true);
+    expect(a.primary).toBe('m4'); expect(a.weapon).toBe('m4'); expect(a.weapons).not.toContain('ak');
+    expect(a.ammo.m4).toEqual({ clip: 30, reserve: 90 }); expect(a.reload).toBe(0); expect(a.switching).toBe(.25);
+    expect(a.health).toBe(37); expect(a.ammo.pistol.clip).toBe(5); expect(a.ammo.he.clip).toBe(0);
+    expect(a.previousWeapon).toBe('pistol'); expect(a.quickSwitch()).toBe(true); expect(a.weapon).toBe('pistol');
+    expect(a.changePrimary('m4')).toBe(true); expect(a.weapon).toBe('m4');
+  });
+
+  it('preserves spent or exhausted primary ammo and per-weapon cooldowns when switching back', () => {
+    const a = equipped(); a.ammo.ak = { clip: 0, reserve: 0 }; a.cooldown = .08;
+    a.changePrimary('awp'); a.ammo.awp.clip = 4; a.cooldown = 1.2;
+    a.changePrimary('ak'); expect(a.ammo.ak).toEqual({ clip: 0, reserve: 0 }); expect(a.cooldown).toBe(.08);
+    a.changePrimary('awp'); expect(a.ammo.awp.clip).toBe(4); expect(a.cooldown).toBe(1.2); expect(a.awpShotAge).toBe(.1);
+  });
+
+  it('lets normal timed resupply replenish previously used primaries, but not banned ones', () => {
+    const a = equipped(); a.ammo.ak.clip = 1; a.scheduleRefill('ak', 10); a.changePrimary('m4');
+    a.replenish(9); a.changePrimary('ak'); expect(a.ammo.ak.clip).toBe(1);
+    a.changePrimary('m4'); a.replenish(1); a.changePrimary('ak'); expect(a.ammo.ak.clip).toBe(30);
+    a.ammo.ak.clip = 2; a.scheduleRefill('ak', 1); a.allowedWeapons = ['m4']; a.changePrimary('m4');
+    a.replenish(1); expect(a.ammo.ak.clip).toBe(2); expect(a.changePrimary('ak')).toBe(false);
+  });
+
+  it('rejects invalid/restricted primaries and queues dead players without reviving or resupplying', () => {
+    const a = equipped(); a.allowedWeapons = ['ak', 'pistol'];
+    expect(a.changePrimary('awp')).toBe(false); expect(a.changePrimary('pistol' as 'ak')).toBe(false);
+    expect(a.primary).toBe('ak'); expect(a.weapon).toBe('ak');
+    a.allowedWeapons.push('m4'); a.alive = false; a.health = 0;
+    expect(a.changePrimary('m4')).toBe(true); expect(a.primary).toBe('m4'); expect(a.alive).toBe(false); expect(a.health).toBe(0);
+    expect(a.ammo.m4.clip).toBe(0); a.refill(); expect(a.ammo.m4.clip).toBe(30); expect(a.ammo.ak.clip).toBe(0);
+  });
+});
+
 describe('charged grenade throws', () => {
   it('increases speed and precision up to a finite 1.5-second cap', () => {
     const tap = grenadeThrow(0), middle = grenadeThrow(.75), full = grenadeThrow(1.5);

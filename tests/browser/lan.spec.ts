@@ -62,6 +62,45 @@ test('LAN human-only match: balanced rooms, remote movement/equipment/fire, shar
   } finally { await hc.close(); await gc.close(); }
 });
 
+test('LAN AWP shots restore the same zoom for guests and hosts after the bolt cycle', async ({ browser }) => {
+  const hc = await browser.newContext(), gc = await browser.newContext();
+  const host = await hc.newPage(), guest = await gc.newPage();
+  const errors: string[] = []; for (const page of [host, guest]) page.on('pageerror', e => errors.push(e.message));
+  try {
+    await room(host, guest, false);
+    await guest.keyboard.press('KeyB'); await guest.locator('[data-deathmatch-primary="awp"]').click();
+    await expect.poll(() => guest.evaluate(() => window.__OPENCS__.player.weapon)).toBe('awp');
+    await guest.locator('#resume').click();
+    await expect.poll(() => guest.evaluate(() => document.pointerLockElement?.id)).toBe('game');
+    await expect.poll(() => guest.evaluate(() => window.__OPENCS__.player.switching)).toBe(0);
+    await guest.evaluate(() => { window.__OPENCS__.player.pitch = 1.4; });
+    for (const level of [1, 2]) {
+      await expect.poll(() => guest.evaluate(() => window.__OPENCS__.player.cooldown)).toBe(0);
+      await guest.evaluate(() => { window.__OPENCS__.scoped = false; });
+      for (let i = 0; i < level; i++) await guest.mouse.click(720, 450, { button: 'right' });
+      await guest.mouse.click(720, 450);
+      await expect(guest.locator('#scope')).toBeHidden();
+      await expect.poll(() => guest.evaluate(() => window.__OPENCS__.scopeLevel)).toBe(level);
+      expect(await guest.evaluate(() => window.__OPENCS__.player.awpShotAge)).toBeGreaterThanOrEqual(.72);
+    }
+    await host.evaluate(() => {
+      const g = window.__OPENCS__; g.changeDeathmatchPrimary('awp'); g.player.switching = 0;
+      g.scopeLevel = 2; g.shoot(g.player, g.player.position.clone().set(0, 1, 0));
+    });
+    expect(await host.evaluate(() => window.__OPENCS__.scopeLevel)).toBe(0);
+    await expect.poll(() => host.evaluate(() => window.__OPENCS__.scopeLevel)).toBe(2);
+    // A guest's quick-switch must cancel the return even though firing is host-authoritative.
+    await expect.poll(() => guest.evaluate(() => window.__OPENCS__.player.cooldown)).toBe(0);
+    await guest.mouse.click(720, 450); await expect(guest.locator('#scope')).toBeHidden();
+    await guest.keyboard.press('KeyQ');
+    await expect.poll(() => guest.evaluate(() => window.__OPENCS__.player.weapon)).toBe('pistol');
+    await guest.keyboard.press('KeyQ');
+    await expect.poll(() => guest.evaluate(() => window.__OPENCS__.player.awpShotAge)).toBeGreaterThan(.85);
+    expect(await guest.evaluate(() => window.__OPENCS__.scopeLevel)).toBe(0);
+    expect(errors).toEqual([]);
+  } finally { await hc.close(); await gc.close(); }
+});
+
 test('LAN bot fill, grenade synchronization, and host-controlled elimination intermission', async ({ browser }) => {
   const hc = await browser.newContext(), gc = await browser.newContext();
   const host = await hc.newPage(), guest = await gc.newPage();
