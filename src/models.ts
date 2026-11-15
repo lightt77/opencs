@@ -80,6 +80,46 @@ export function weaponModel(id: WeaponId, hands = false): THREE.Group {
   return root;
 }
 
+// Late-90s low-poly look: tiny procedural textures, magnified with nearest filtering.
+function seeded(seed: number) { return () => { seed |= 0; seed = seed + 0x6d2b79f5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function pixelMaterial(seed: number, base: string, paint: (ctx: CanvasRenderingContext2D, rand: () => number) => void, size = 32) {
+  const canvas = document.createElement('canvas'); canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!, rand = seeded(seed);
+  ctx.fillStyle = base; ctx.fillRect(0, 0, size, size);
+  for (let i = 0; i < size * size / 3; i++) { ctx.fillStyle = `rgba(${rand() < .5 ? '0,0,0' : '255,255,255'},${.04 + rand() * .06})`; ctx.fillRect(Math.floor(rand() * size), Math.floor(rand() * size), 1, 1); }
+  paint(ctx, rand);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.magFilter = THREE.NearestFilter; texture.minFilter = THREE.NearestMipmapNearestFilter; texture.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.MeshStandardMaterial({ map: texture, roughness: .92 });
+}
+const blotches = (colors: string[], count: number, max = 7) => (ctx: CanvasRenderingContext2D, rand: () => number) => {
+  for (let i = 0; i < count; i++) { ctx.fillStyle = colors[i % colors.length]; ctx.fillRect(Math.floor(rand() * 32), Math.floor(rand() * 32), 2 + Math.floor(rand() * max), 2 + Math.floor(rand() * max * .6)); }
+};
+const stitches = (color: string) => (ctx: CanvasRenderingContext2D) => { ctx.fillStyle = color; for (let y = 3; y < 32; y += 8) for (let x = 0; x < 32; x += 2) ctx.fillRect(x, y, 1, 1); };
+const knit = (color: string) => (ctx: CanvasRenderingContext2D) => { ctx.fillStyle = color; for (let y = 0; y < 32; y += 2) for (let x = (y / 2) % 2; x < 32; x += 2) ctx.fillRect(x, y, 1, 1); };
+const respirator = material(0x2a2f2f, .6), lensGlass = new THREE.MeshStandardMaterial({ color: 0x7fa3ad, roughness: .15, metalness: .4 });
+interface Kit { top: THREE.Material; gear: THREE.Material; pants: THREE.Material; boots: THREE.Material; face: THREE.Material }
+const kits: Partial<Record<Team, Kit>> = {};
+const kitMaterials = new Set<THREE.Material>([respirator, lensGlass]);
+function teamKit(team: Team): Kit {
+  const cached = kits[team]; if (cached) return cached;
+  const kit: Kit = team === 'blue' ? {
+    top: pixelMaterial(11, '#323c4a', blotches(['#26303c', '#414d5d', '#1d242e'], 46)),
+    gear: pixelMaterial(12, '#1f2428', stitches('#2f363b')),
+    pants: pixelMaterial(13, '#2f3946', blotches(['#232b36', '#3d4857'], 40)),
+    boots: pixelMaterial(14, '#15181a', stitches('#22272a')),
+    face: pixelMaterial(15, '#1b1d1f', knit('#262a2c')),
+  } : {
+    top: pixelMaterial(21, '#6b5b3f', blotches(['#5a4b33', '#7c6a4b', '#4d4130'], 30, 9)),
+    gear: pixelMaterial(22, '#4e5236', stitches('#5f6443')),
+    pants: pixelMaterial(23, '#7a6f55', blotches(['#6a5f47', '#857a5f'], 26, 6)),
+    boots: pixelMaterial(24, '#3e2c1f', stitches('#4c3828')),
+    face: pixelMaterial(25, '#3a3a38', knit('#4a4a47')),
+  };
+  for (const m of Object.values(kit)) kitMaterials.add(m);
+  return kits[team] = kit;
+}
+
 export class Soldier {
   root = new THREE.Group();
   body = new THREE.Group();
@@ -102,35 +142,48 @@ export class Soldier {
 
   constructor(team: Team, name: string, weapon: WeaponId) {
     this.heldWeapon = weapon;
-    const uniform = material(team === 'blue' ? 0x405a64 : 0x82644e);
+    const kit = teamKit(team), uniform = kit.top;
     const accent = material(TEAM_COLOR[team]);
     this.root.add(this.body);
-    const torso = block(this.body, [.43, .49, .27], [0, 1.12, 0], uniform);
+    const torso = block(this.body, [.42, .5, .25], [0, 1.12, 0], kit.top);
     torso.userData.head = false;
-    block(this.body, [.37, .32, .075], [0, 1.14, -.16], dark);
-    for (const x of [-.12, 0, .12]) block(this.body, [.085, .12, .05], [x, 1.07, -.21], olive);
-    block(this.body, [.38, .075, .29], [0, .87, 0], dark);
-    const head = new THREE.Mesh(new THREE.IcosahedronGeometry(.18, 1), skin);
-    head.position.set(0, 1.56, -.015); head.scale.set(.85, 1.08, .9); head.userData.head = true; this.body.add(head);
-    const helmet = block(this.body, [.32, .15, .3], [0, 1.68, 0], uniform); helmet.userData.head = true;
-    const visor = block(this.body, [.26, .065, .04], [0, 1.58, -.16], dark); visor.userData.head = true;
-    block(this.body, [.36, .04, .32], [0, 1.625, -.015], uniform).userData.head = true;
-    this.leftLeg.position.set(-.13, .84, 0); this.rightLeg.position.set(.13, .84, 0);
-    for (const [leg, knee, foot] of [[this.leftLeg, this.leftKnee, this.leftFoot], [this.rightLeg, this.rightKnee, this.rightFoot]]) {
-      block(leg, [.16, .38, .19], [0, -.19, 0], uniform);
-      knee.position.y = -.41; leg.add(knee);
-      block(knee, [.14, .36, .17], [0, -.18, 0], uniform);
-      block(knee, [.17, .11, .045], [0, -.01, -.095], dark);
-      foot.position.y = -.39; knee.add(foot);
-      block(foot, [.17, .12, .29], [0, -.045, -.065], dark);
-      this.body.add(leg);
+    block(this.body, [.38, .08, .27], [0, .87, 0], dark);
+    block(this.body, [.06, .06, .02], [0, .87, -.14], steel); // belt buckle
+    if (team === 'blue') {
+      // Counter-terror operator: plate vest, pouches, helmet and respirator.
+      block(this.body, [.46, .38, .31], [0, 1.15, 0], kit.gear);
+      for (const x of [-.13, 0, .13]) block(this.body, [.1, .13, .06], [x, 1.03, -.18], kit.gear);
+      block(this.body, [.2, .06, .04], [0, 1.3, -.17], accent); // chest ID strip
+      const head = new THREE.Mesh(new THREE.IcosahedronGeometry(.17, 1), kit.face);
+      head.position.set(0, 1.56, -.01); head.scale.set(.88, 1.08, .92); head.userData.head = true; this.body.add(head);
+      const helmet = new THREE.Mesh(new THREE.SphereGeometry(.2, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), kit.gear);
+      helmet.position.set(0, 1.6, 0); helmet.scale.set(1, .85, 1.08); helmet.userData.head = true; this.body.add(helmet);
+      block(this.body, [.36, .035, .36], [0, 1.6, -.01], kit.gear).userData.head = true; // brim
+      block(this.body, [.19, .11, .07], [0, 1.535, -.16], respirator).userData.head = true;
+      for (const x of [-.055, .055]) {
+        const lens = new THREE.Mesh(new THREE.CylinderGeometry(.034, .034, .02, 8), lensGlass);
+        lens.rotation.x = Math.PI / 2; lens.position.set(x, 1.585, -.198); lens.userData.head = true; this.body.add(lens);
+      }
+      const filter = new THREE.Mesh(new THREE.CylinderGeometry(.04, .045, .07, 8), respirator);
+      filter.rotation.x = Math.PI / 2; filter.position.set(.05, 1.49, -.22); filter.userData.head = true; this.body.add(filter);
+    } else {
+      // Insurgent: field jacket, chest rig with magazines, knit balaclava.
+      block(this.body, [.44, .12, .27], [0, 1.31, 0], kit.top); // jacket collar/shoulders
+      block(this.body, [.36, .2, .07], [0, 1.06, -.15], kit.gear);
+      for (const x of [-.11, 0, .11]) block(this.body, [.075, .15, .045], [x, 1.1, -.2], steel);
+      block(this.body, [.06, .48, .02], [.12, 1.12, -.13], kit.gear).rotation.z = .55; // sling strap
+      const head = new THREE.Mesh(new THREE.IcosahedronGeometry(.175, 1), kit.face);
+      head.position.set(0, 1.57, -.01); head.scale.set(.88, 1.1, .92); head.userData.head = true; this.body.add(head);
+      block(this.body, [.2, .05, .03], [0, 1.585, -.152], skin).userData.head = true; // eye slit
+      for (const x of [-.045, .045]) block(this.body, [.035, .025, .01], [x, 1.585, -.168], dark).userData.head = true;
+      block(this.body, [.17, .05, .17], [0, 1.745, 0], kit.face).userData.head = true; // knit crown
     }
     this.leftArm.position.set(-.28, 1.32, 0); this.rightArm.position.set(.28, 1.32, 0);
     for (const arm of [this.leftArm, this.rightArm]) {
       block(arm, [.14, .27, .16], [0, -.12, 0], uniform);
       block(arm, [.15, .08, .17], [0, -.055, 0], accent);
       block(arm, [.12, .13, .28], [0, -.24, -.1], uniform);
-      block(arm, [.11, .1, .11], [0, -.24, -.27], skin);
+      block(arm, [.11, .1, .11], [0, -.24, -.27], team === 'blue' ? dark : skin); // gloves vs bare hands
       arm.rotation.x = -.35; this.body.add(arm);
     }
     this.gun = weaponModel(weapon); this.gun.position.set(.17, 1.03, -.35); this.body.add(this.gun);
@@ -212,7 +265,7 @@ export function disposeTree(root: THREE.Object3D) {
   });
   for (const geometry of geometries) geometry.dispose();
   // Shared weapon materials are intentionally retained across matches.
-  const shared = new Set<THREE.Material>([steel, dark, wood, skin, olive]);
+  const shared = new Set<THREE.Material>([steel, dark, wood, skin, olive, ...kitMaterials]);
   for (const mat of materials) {
     if (shared.has(mat)) continue;
     if ('map' in mat && mat.map instanceof THREE.Texture) mat.map.dispose();

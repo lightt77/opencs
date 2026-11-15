@@ -165,17 +165,20 @@ test('LAN guests predict their own movement without waiting for the host, and th
   try {
     await room(host, guest, false);
     await expect.poll(() => guest.evaluate(() => window.__OPENCS__.phase)).toBe('live');
-    // Simulate a laggy link: hold back every host snapshot for 400 ms.
-    await guest.evaluate(() => { const lan = window.__OPENCS__.lan, original = lan.onSnapshot!; lan.onSnapshot = state => { setTimeout(() => original(state), 400); }; });
+    // Simulate a very laggy link: hold back every host snapshot for 1.5 s.
+    await guest.evaluate(() => { const lan = window.__OPENCS__.lan, original = lan.onSnapshot!; lan.onSnapshot = state => { setTimeout(() => original(state), 1500); }; });
     const start = await guest.evaluate(() => window.__OPENCS__.player.position.toArray());
+    const began = Date.now();
     await guest.keyboard.down('KeyW');
-    await guest.waitForTimeout(250);
-    const moved = await guest.evaluate(([x, , z]) => Math.hypot(window.__OPENCS__.player.position.x - x, window.__OPENCS__.player.position.z - z), start);
-    expect(moved).toBeGreaterThan(.6); // predicted locally, well before any delayed snapshot could arrive
+    // Predicted locally, well before any delayed snapshot could arrive.
+    await expect.poll(() => guest.evaluate(([x, , z]) => Math.hypot(window.__OPENCS__.player.position.x - x, window.__OPENCS__.player.position.z - z), start), { timeout: 1200, intervals: [50] }).toBeGreaterThan(.6);
+    expect(Date.now() - began).toBeLessThan(1400);
     await guest.keyboard.up('KeyW');
-    await guest.waitForTimeout(900);
-    const [g, h] = await Promise.all([guest.evaluate(() => window.__OPENCS__.player.position.toArray()), host.evaluate(() => window.__OPENCS__.actors[1].position.toArray())]);
-    expect(Math.hypot(g[0] - h[0], g[2] - h[2])).toBeLessThan(.5); // host adopted the guest's movement
+    // The host adopts the guest's movement (compare host now against guest now).
+    await expect.poll(async () => {
+      const [g, h] = await Promise.all([guest.evaluate(() => window.__OPENCS__.player.position.toArray()), host.evaluate(() => window.__OPENCS__.actors[1].position.toArray())]);
+      return Math.hypot(g[0] - h[0], g[2] - h[2]);
+    }, { timeout: 5000 }).toBeLessThan(.5);
     expect(errors).toEqual([]);
   } finally { await hc.close(); await gc.close(); }
 });
