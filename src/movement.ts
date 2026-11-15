@@ -33,3 +33,38 @@ export function verticalMotion(velocity: number, grounded: boolean, jump: boolea
   }
   return { velocity, jumpsUsed };
 }
+
+// GoldSrc-style ("classic") movement, converted from Half-Life units to metres
+// (1 u ≈ 2.54 cm): sv_friction 4, sv_stopspeed 75 u/s, sv_accelerate 5.5,
+// sv_airaccelerate 10 and a 30 u/s air wish-speed cap, which is what makes air-strafing work.
+export const CLASSIC = { friction: 4, stopSpeed: 1.9, accelerate: 5.5, airAccelerate: 10, airWishCap: .76, landingScale: .8, airSpeedCap: 1.7 };
+
+function accelerate(vx: number, vz: number, wx: number, wz: number, wishSpeed: number, addCap: number, accel: number, dt: number) {
+  const add = addCap - (vx * wx + vz * wz);
+  if (add <= 0) return { x: vx, z: vz };
+  const step = Math.min(accel * wishSpeed * dt, add);
+  return { x: vx + wx * step, z: vz + wz * step };
+}
+
+export function classicGroundVelocity(vx: number, vz: number, dx: number, dz: number, maxSpeed: number, dt: number) {
+  const speed = Math.hypot(vx, vz);
+  if (speed > 0) {
+    const drop = Math.max(speed, CLASSIC.stopSpeed) * CLASSIC.friction * dt, scale = Math.max(0, speed - drop) / speed;
+    vx *= scale; vz *= scale;
+  }
+  const input = Math.hypot(dx, dz);
+  if (!input) return { x: vx, z: vz };
+  const v = accelerate(vx, vz, dx / input, dz / input, maxSpeed, maxSpeed, CLASSIC.accelerate, dt);
+  const capped = Math.hypot(v.x, v.z);
+  return capped > maxSpeed ? { x: v.x * maxSpeed / capped, z: v.z * maxSpeed / capped } : v;
+}
+
+// No input keeps momentum. Turning while holding a strafe key gains a little speed, as in CS,
+// but never more than airSpeedCap × the ground speed.
+export function classicAirVelocity(vx: number, vz: number, dx: number, dz: number, maxSpeed: number, dt: number) {
+  const input = Math.hypot(dx, dz);
+  if (!input) return { x: vx, z: vz };
+  const v = accelerate(vx, vz, dx / input, dz / input, maxSpeed, Math.min(maxSpeed, CLASSIC.airWishCap), CLASSIC.airAccelerate, dt);
+  const speed = Math.hypot(v.x, v.z), cap = maxSpeed * CLASSIC.airSpeedCap;
+  return speed > cap ? { x: v.x * cap / speed, z: v.z * cap / speed } : v;
+}

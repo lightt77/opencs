@@ -295,6 +295,7 @@ export class UI {
       <label class="slider-label" for="sensitivity">MOUSE SENSITIVITY <output>${s.sensitivity.toFixed(2)}</output></label><input id="sensitivity" type="range" min="0.25" max="2.5" step="0.05" value="${s.sensitivity}" />
       <label class="slider-label" for="movementSpeed">MOVEMENT SPEED <output>${s.movementSpeed.toFixed(1)}×</output></label><input id="movementSpeed" type="range" min="0.5" max="2" step="0.1" value="${s.movementSpeed}" />
       <label class="slider-label" for="jumpGravity">JUMP GRAVITY <output>${s.jumpGravity} m/s²</output></label><input id="jumpGravity" type="range" min="10" max="35" step="1" value="${s.jumpGravity}" />
+      <label class="slider-label" for="movementStyle">MOVEMENT STYLE</label><select id="movementStyle" class="pack-select"><option value="classic" ${s.movementStyle === 'classic' ? 'selected' : ''}>CLASSIC · CS-STYLE FRICTION, AIR-STRAFE</option><option value="arcade" ${s.movementStyle === 'arcade' ? 'selected' : ''}>ARCADE · SNAPPY, FULL AIR CONTROL</option></select><p class="settings-hint">Classic: momentum carries, counter-strafe to stop, landings cost speed, and you steer in the air by turning while holding A/D.</p>
       <label class="checkbox-label"><span>DOUBLE JUMP <small>Press Space again in the air for one extra jump.</small></span><input id="doubleJump" type="checkbox" ${s.doubleJump ? 'checked' : ''} /></label>
       <h3>ROUND TIMING</h3>
       <label class="slider-label" for="matchDuration">DEATHMATCH DURATION <output>${timeString(s.matchDuration)}</output></label><input id="matchDuration" type="range" min="30" max="3600" step="30" value="${s.matchDuration}" />
@@ -355,7 +356,7 @@ export class UI {
         this.settings[key] = (event.target as HTMLInputElement).checked; this.applySettings();
       });
     }
-    for (const key of ['effectsPack', 'wallShots', 'grenadeWeight'] as const) this.overlay.querySelector(`#${key}`)!.addEventListener('change', event => {
+    for (const key of ['effectsPack', 'wallShots', 'grenadeWeight', 'movementStyle'] as const) this.overlay.querySelector(`#${key}`)!.addEventListener('change', event => {
       Object.assign(this.settings, { [key]: (event.target as HTMLSelectElement).value }); this.applySettings();
     });
     const updateRules = (weapons: WeaponId[]) => {

@@ -27,7 +27,7 @@ export type FirearmId = 'ak' | 'm4' | 'awp' | 'pistol';
 export interface Settings {
   map: MapId; mode: Mode; difficulty: Difficulty; primary: Primary;
   sensitivity: number; volume: number; fov: number; shadows: boolean;
-  movementSpeed: number; doubleJump: boolean; jumpGravity: number;
+  movementSpeed: number; doubleJump: boolean; jumpGravity: number; movementStyle: 'classic' | 'arcade';
   soundPack: SoundPack;
   freezeTime: number; roundEndDelay: number;
   matchDuration: number; roundDuration: number; autoRotate: boolean; rotationDelay: number;
@@ -42,7 +42,7 @@ export interface Settings {
 export const DEFAULTS: Settings = {
   map: 'dust', mode: 'tdm', difficulty: 'medium', primary: 'ak',
   sensitivity: 1, volume: 65, fov: 85, shadows: true,
-  movementSpeed: 1, doubleJump: false, jumpGravity: 20,
+  movementSpeed: 1, doubleJump: false, jumpGravity: 20, movementStyle: 'classic',
   soundPack: 'classic',
   freezeTime: 3, roundEndDelay: 2.5,
   matchDuration: 360, roundDuration: 100, autoRotate: false, rotationDelay: 8,
@@ -73,6 +73,7 @@ export function sanitizeSettings(value: unknown): Settings {
       shadows: typeof raw.shadows === 'boolean' ? raw.shadows : true,
       movementSpeed: finiteRange(raw.movementSpeed, .5, 2, DEFAULTS.movementSpeed),
       doubleJump: typeof raw.doubleJump === 'boolean' ? raw.doubleJump : DEFAULTS.doubleJump,
+      movementStyle: raw.movementStyle === 'arcade' ? 'arcade' : 'classic',
       jumpGravity: finiteRange(raw.jumpGravity, 10, 35, DEFAULTS.jumpGravity),
       soundPack: ['classic', 'punchy', 'suppressed', 'custom', 'assets'].includes(raw.soundPack) ? raw.soundPack : DEFAULTS.soundPack,
       freezeTime: finiteRange(raw.freezeTime, 0, 10, DEFAULTS.freezeTime),

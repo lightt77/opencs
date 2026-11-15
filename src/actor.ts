@@ -75,6 +75,7 @@ export class Actor {
 
   get eyeHeight() { return this.body.crouched ? 1.56 - CROUCH_DROP : 1.56; }
   eye() { return this.position.clone().add(new THREE.Vector3(0, this.eyeHeight, 0)); }
+  airborne = false;
   get speed() { return Math.hypot(this.velocity.x, this.velocity.z); }
   get weapons() { return inventory(this.primary, this.allowedWeapons); }
 

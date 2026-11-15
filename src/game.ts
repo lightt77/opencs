@@ -11,7 +11,7 @@ import { Navigation } from './navigation';
 import { Physics } from './physics';
 import { View } from './view';
 import { SnapshotBuffer, acceptMove, startTicker } from './netcode';
-import { airVelocity, footstepStride, movementScale, scopeFov, verticalMotion } from './movement';
+import { CLASSIC, airVelocity, classicAirVelocity, classicGroundVelocity, footstepStride, movementScale, scopeFov, verticalMotion } from './movement';
 import { coverHits, penetration } from './ballistics';
 import { chooseSpawn, spawnCandidates } from './spawns';
 import { blastFlight, grenadePose, grenadeThrow } from './grenades';
@@ -720,13 +720,17 @@ export class Game {
     const vertical = verticalMotion(p.velocity.y, p.body.grounded, jump, p.jumpsUsed, this.settings.doubleJump, this.settings.jumpGravity, dt);
     if (vertical.jumpsUsed > p.jumpsUsed) this.sound.jump(p === this.player ? undefined : p.position);
     p.velocity.y = vertical.velocity; p.jumpsUsed = vertical.jumpsUsed;
+    const classic = this.settings.movementStyle === 'classic', wasAirborne = p.airborne;
     if (p.body.grounded) {
-      const v = groundVelocity(p.velocity.x, p.velocity.z, dx, dz, maxSpeed, dt);
+      // Classic landings bleed speed, so chained jumps don't outrun running.
+      if (classic && wasAirborne) { p.velocity.x *= CLASSIC.landingScale; p.velocity.z *= CLASSIC.landingScale; }
+      const v = (classic ? classicGroundVelocity : groundVelocity)(p.velocity.x, p.velocity.z, dx, dz, maxSpeed, dt);
       p.velocity.x = v.x; p.velocity.z = v.z;
     } else {
-      const v = airVelocity(p.velocity.x, p.velocity.z, dx, dz, maxSpeed, dt);
+      const v = (classic ? classicAirVelocity : airVelocity)(p.velocity.x, p.velocity.z, dx, dz, maxSpeed, dt);
       p.velocity.x = v.x; p.velocity.z = v.z;
     }
+    p.airborne = !p.body.grounded || vertical.velocity > 0;
     p.body.move(p.velocity.x * dt, p.velocity.y * dt, p.velocity.z * dt);
   }
 

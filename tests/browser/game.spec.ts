@@ -806,10 +806,10 @@ test('AWP has rearward kick, a visible bolt cycle, and a settled ready pose', as
   expect(result.settled).toBeCloseTo(result.rest); expect(result.closed).toBe(0); expect(result.ammo).toBe(4);
 });
 
-test('a leftward jump can be counter-steered right before landing', async ({ page }) => {
+test('arcade movement: a leftward jump can be counter-steered right before landing', async ({ page }) => {
   await open(page); await page.locator('[data-map="india"]').click(); await deploy(page, true);
   await page.evaluate(() => {
-    const g = window.__OPENCS__; g.phase = 'live';
+    const g = window.__OPENCS__; g.phase = 'live'; g.settings.movementStyle = 'arcade';
     for (const a of g.actors.slice(1)) { a.alive = false; a.respawn = 1000; a.body.enabled(false); }
     g.player.reset({ x: 0, z: 25 }, 0);
   });
@@ -889,4 +889,21 @@ test('profile-pool edits wait for the next elimination round and preserve player
   expect(previous.unchanged).toBe(true);
   expect(await page.evaluate(() => window.__OPENCS__.actors.slice(1).every(a => a.profile!.id === 'rookie'))).toBe(true);
   expect(await page.evaluate(() => window.__OPENCS__.player.kills)).toBe(previous.kills);
+});
+
+test('classic movement: momentum carries through a jump and friction stops you', async ({ page }) => {
+  await open(page); await page.locator('[data-map="india"]').click(); await deploy(page, true);
+  await page.evaluate(() => {
+    const g = window.__OPENCS__; g.phase = 'live'; g.settings.movementStyle = 'classic';
+    for (const a of g.actors.slice(1)) { a.alive = false; a.respawn = 1000; a.body.enabled(false); }
+    g.player.reset({ x: 0, z: 25 }, 0);
+  });
+  const step = (n: number) => page.evaluate(n => { const g = window.__OPENCS__; for (let i = 0; i < n; i++) g.update(1 / 60); return { speed: g.player.speed, grounded: g.player.body.grounded }; }, n);
+  await page.keyboard.down('KeyA'); const ground = await step(40);
+  await page.keyboard.press('Space'); await page.keyboard.up('KeyA');
+  const air = await step(8);
+  const stopped = await step(90);
+  expect(ground.speed).toBeGreaterThan(5);
+  expect(air.grounded).toBe(false); expect(air.speed).toBeGreaterThan(4.5); // no keys held: momentum carries
+  expect(stopped.speed).toBeLessThan(.05);
 });
