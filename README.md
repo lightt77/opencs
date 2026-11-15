@@ -208,6 +208,17 @@ ZIP packs and game-specific archives are not imported directly: extract their au
 
 Victories can interrupt lower-priority radio; old callouts are not queued. Unused supplied clips remain in `assets/sounds` for future scenarios. **Audio provenance/licensing has not been verified:** these recordings were supplied locally, not created for OPENCS. Confirm permission before publishing or redistributing them.
 
+## Custom maps
+
+Drop a JSON map into `src/maps/custom/` and it shows up in the map picker as `custom_<file>`. You don't need to change any code.
+The format is described in [docs/MAP_AUTHORING.md](docs/MAP_AUTHORING.md). It is built so a coding agent can write a map from a plain-language
+description. In Claude Code, run `/create-map a two-site snowy outpost with a long A and a tight B tunnel`.
+
+```sh
+npm run map:check -- src/maps/custom/market_district.json            # validate, check reachability, ASCII preview
+npm run map:check -- src/maps/custom/market_district.json --svg m.svg # also write a top-down SVG
+```
+
 ## Development
 
 Gameplay runs at a fixed 60 Hz, independently of rendering. Map data, weapon tuning, and pure navigation/combat helpers are separate from the renderer. Geometry, character rigs, weapon models, textures, and procedural audio are generated locally. Supplied WAV files are bundled by Vite and decoded/cached through Web Audio after a user gesture; no external audio service is required.

@@ -11,7 +11,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "map:check": "tsx scripts/map-check.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",

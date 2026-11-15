@@ -4,7 +4,20 @@ export type Team = 'blue' | 'red';
 export type Mode = 'tdm' | 'elimination';
 export type Difficulty = 'easy' | 'medium' | 'hard';
 export const MAP_IDS = ['dust', 'snow', 'india', 'longshot', 'dust2_blockout', 'canopy', 'dockyard', 'alpine', 'redrock', 'quarter', 'foundry', 'pinewatch'] as const;
-export type MapId = typeof MAP_IDS[number];
+export type BuiltinMapId = typeof MAP_IDS[number];
+// Custom maps are discovered from src/maps/custom/*.json and are always prefixed.
+export type MapId = BuiltinMapId | `custom_${string}`;
+export const CUSTOM_MAP_ID = /^custom_[a-z0-9_]{1,48}$/;
+let customMapIds: string[] | undefined;
+// The client registers the custom maps it bundled. The LAN server never loads map
+// files, so until registration any well-formed custom id is accepted.
+export function registerCustomMaps(ids: string[]) { customMapIds = ids.filter(id => CUSTOM_MAP_ID.test(id)); }
+export function allMapIds(): MapId[] { return [...MAP_IDS, ...(customMapIds ?? []) as MapId[]]; }
+export function isMapId(value: unknown): value is MapId {
+  if (typeof value !== 'string') return false;
+  if ((MAP_IDS as readonly string[]).includes(value)) return true;
+  return customMapIds ? customMapIds.includes(value) : CUSTOM_MAP_ID.test(value);
+}
 export type WeaponId = 'ak' | 'm4' | 'awp' | 'pistol' | 'knife' | 'he' | 'flash' | 'smoke';
 export type Primary = 'ak' | 'm4' | 'awp';
 export type BuiltinSoundPack = 'classic' | 'punchy' | 'suppressed';
@@ -50,7 +63,7 @@ export function sanitizeSettings(value: unknown): Settings {
   try {
     const raw = value as Settings;
     return {
-      map: MAP_IDS.includes(raw.map) ? raw.map : DEFAULTS.map,
+      map: isMapId(raw.map) ? raw.map : DEFAULTS.map,
       mode: ['tdm', 'elimination'].includes(raw.mode) ? raw.mode : DEFAULTS.mode,
       difficulty: ['easy', 'medium', 'hard'].includes(raw.difficulty) ? raw.difficulty : DEFAULTS.difficulty,
       primary: ['ak', 'm4', 'awp'].includes(raw.primary) ? raw.primary : DEFAULTS.primary,

@@ -5,6 +5,8 @@ import { clamp, type Box, type Point } from './math';
 
 type Vec3 = [number, number, number];
 export interface MapDefinition {
+  // Optional presentation metadata used by custom maps (src/maps/custom/*.json).
+  displayName?: string; biome?: BiomeId; subtitle?: string; description?: string;
   mapName: string; unitScale: number; bounds: { min: number[]; max: number[] };
   regions: Array<{ id: string; type: string; bounds: { x: number; y: number; z: number; width: number; height: number; depth: number }; tags: string[];
     cover: Array<{ type: string; pos: number[]; size: number[]; rotY?: number }> }>;
@@ -18,16 +20,19 @@ export function validateMap(value: unknown): asserts value is MapDefinition {
   if (!m || typeof m.mapName !== 'string' || !Number.isFinite(m.unitScale) || m.unitScale <= 0 || m.unitScale > 10 || !vector(m.bounds?.min) || !vector(m.bounds?.max)) throw new Error('Invalid map name, scale or bounds');
   if (m.bounds.max.some((n, i) => n <= m.bounds.min[i]) || m.bounds.max.some((n, i) => (n - m.bounds.min[i]) * m.unitScale > 512)) throw new Error('Map bounds must be positive and at most 512 metres per axis');
   if (!Array.isArray(m.regions) || !m.regions.length || m.regions.length > 128 || !Array.isArray(m.connections) || m.connections.length > 512) throw new Error('Invalid region/connection count');
+  if (m.biome !== undefined && !(m.biome in BIOMES)) throw new Error(`Unknown biome "${m.biome}". Use one of: ${Object.keys(BIOMES).join(', ')}`);
+  for (const key of ['displayName', 'subtitle', 'description'] as const) if (m[key] !== undefined && (typeof m[key] !== 'string' || m[key]!.length > 240)) throw new Error(`${key} must be a string of at most 240 characters`);
   const ids = new Set<string>();
   for (const r of m.regions) {
-    if (!r || typeof r.id !== 'string' || ids.has(r.id) || typeof r.type !== 'string') throw new Error('Duplicate or invalid region ID');
+    if (!r || typeof r.id !== 'string' || typeof r.type !== 'string') throw new Error(`Region needs string "id" and "type": ${JSON.stringify(r)?.slice(0, 80)}`);
+    if (ids.has(r.id)) throw new Error(`Duplicate region id: ${r.id}`);
     ids.add(r.id);
     const b = r.bounds;
     if (!b || ![b.x, b.y, b.z, b.width, b.height, b.depth].every(Number.isFinite) || Math.min(b.width, b.height, b.depth) <= 0) throw new Error(`Invalid bounds: ${r.id}`);
     if (!Array.isArray(r.tags) || !r.tags.every(t => typeof t === 'string') || !Array.isArray(r.cover) || r.cover.length > 128) throw new Error(`Invalid tags/cover: ${r.id}`);
     for (const c of r.cover) if (typeof c.type !== 'string' || !vector(c.pos) || !vector(c.size) || c.size.some(n => n <= 0) || (c.rotY !== undefined && !Number.isFinite(c.rotY))) throw new Error(`Invalid cover: ${r.id}`);
   }
-  for (const c of m.connections) if (!ids.has(c.from) || !ids.has(c.to) || typeof c.type !== 'string' || (c.elevationChange !== undefined && !Number.isFinite(c.elevationChange))) throw new Error('Invalid connection reference');
+  for (const c of m.connections) if (!ids.has(c.from) || !ids.has(c.to) || typeof c.type !== 'string' || (c.elevationChange !== undefined && !Number.isFinite(c.elevationChange))) throw new Error(`Invalid connection ${c?.from} -> ${c?.to}: both ids must exist and "type" must be a string`);
   for (const tag of ['spawn_ct', 'spawn_t']) if (!m.regions.some(r => r.tags.includes(tag))) throw new Error(`Missing ${tag} region`);
 }
 
@@ -43,8 +48,9 @@ export function surfaceHeight(arena: Arena, p: Point): number | undefined {
 // Compile declarative regions into a deterministic, single-layer blockout. Connections
 // infer L-shaped corridors; all elevation changes get accessible 20cm stair ramps.
 // The supplied source stays unchanged. This is not a stacked-floor/navmesh importer.
-export function compileMap(value: unknown, id: MapId, name: string, biome: BiomeId): Arena {
+export function compileMap(value: unknown, id: MapId, name?: string, biome?: BiomeId): Arena {
   validateMap(value); const m = value, s = m.unitScale;
+  name ??= (m.displayName ?? m.mapName).toUpperCase(); biome ??= m.biome ?? 'desert';
   const width = Math.ceil((m.bounds.max[0] - m.bounds.min[0]) * s), depth = Math.ceil((m.bounds.max[2] - m.bounds.min[2]) * s);
   const cx = (m.bounds.min[0] + m.bounds.max[0]) / 2, cz = (m.bounds.min[2] + m.bounds.max[2]) / 2;
   const cell = .5, cols = width / cell, rows = depth / cell, heights = new Float32Array(cols * rows).fill(NaN);
@@ -115,7 +121,7 @@ export function compileMap(value: unknown, id: MapId, name: string, biome: Biome
       }
     }
   }
-  const arena: Arena = { ...BIOMES[biome], id, name, biome, subtitle: 'DESERT / JSON REGIONS · ELEVATION · TUNNELS', description: 'Your supplied 22-region blockout with inferred corridors and accessible stepped transitions. Not an exact recreation.', width, depth, boxes, routes: [], blue: [], red: [], surface: { cell, cols, rows, heights }, navCell: 1, viewDistance: 320, fogNear: 140, areas: [], sites: [] };
+  const arena: Arena = { ...BIOMES[biome], id, name, biome, subtitle: m.subtitle ?? `${BIOMES[biome].name.toUpperCase()} / JSON REGIONS · ELEVATION · TUNNELS`, description: m.description ?? `A ${m.regions.length}-region blockout with inferred corridors and accessible stepped transitions.`, width, depth, boxes, routes: [], blue: [], red: [], surface: { cell, cols, rows, heights }, navCell: 1, viewDistance: 320, fogNear: 140, areas: [], sites: [] };
   for (const r of regions) {
     const b = r.bounds;
     arena.areas!.push({ x: b.x, z: b.z, y: b.y, name: r.id.replaceAll('_', ' ').toUpperCase(), radius: Math.max(b.width, b.depth) / 2 });

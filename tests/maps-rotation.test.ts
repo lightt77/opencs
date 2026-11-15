@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAP_IDS, DEFAULTS, sanitizeSettings } from '../src/config';
+import { MAP_IDS, DEFAULTS, allMapIds, sanitizeSettings } from '../src/config';
 import { BIOMES } from '../src/biomes';
 import { MAPS } from '../src/maps';
 import { compileMap, surfaceHeight, validateMap } from '../src/map-schema';
@@ -11,9 +11,10 @@ import { segmentBox } from '../src/math';
 
 describe('bundled arenas and map compiler', () => {
   it('bundles twelve distinct layouts across eight reusable biomes', () => {
-    expect(Object.keys(MAPS)).toEqual([...MAP_IDS]);
+    expect(Object.keys(MAPS)).toEqual(allMapIds());
+    expect(allMapIds().slice(0, MAP_IDS.length)).toEqual([...MAP_IDS]);
     expect(new Set(Object.values(MAPS).map(a => a.biome)).size).toBe(8);
-    expect(new Set(Object.values(MAPS).map(a => JSON.stringify(a.boxes))).size).toBe(12);
+    expect(new Set(Object.values(MAPS).map(a => JSON.stringify(a.boxes))).size).toBe(allMapIds().length);
     for (const a of Object.values(MAPS)) {
       expect(BIOMES[a.biome]).toBeDefined();
       expect(sanitizeSettings({ map: a.id }).map).toBe(a.id);
@@ -64,9 +65,10 @@ describe('timed matches and rotation settings', () => {
     expect(sanitizeSettings({ matchDuration: Infinity, roundDuration: -1, rotationDelay: 999, autoRotate: true })).toMatchObject({ matchDuration: DEFAULTS.matchDuration, roundDuration: 15, rotationDelay: 30, autoRotate: true });
   });
   it('chooses a random different map, with every alternative eligible', () => {
-    for (const current of MAP_IDS) {
-      const choices = new Set(Array.from({ length: MAP_IDS.length - 1 }, (_, i) => randomMap(current, () => (i + .5) / (MAP_IDS.length - 1))));
-      expect(choices.size).toBe(MAP_IDS.length - 1); expect(choices.has(current)).toBe(false);
+    const ids = allMapIds();
+    for (const current of ids) {
+      const choices = new Set(Array.from({ length: ids.length - 1 }, (_, i) => randomMap(current, () => (i + .5) / (ids.length - 1))));
+      expect(choices.size).toBe(ids.length - 1); expect(choices.has(current)).toBe(false);
     }
   });
 });

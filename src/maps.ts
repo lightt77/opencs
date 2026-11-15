@@ -1,4 +1,4 @@
-import type { MapId } from './config';
+import { registerCustomMaps, type MapId } from './config';
 import type { Box, Point } from './math';
 import { BIOMES, type BiomeId } from './biomes';
 import { compileMap, type SurfaceGrid } from './map-schema';
@@ -24,7 +24,7 @@ const arena = (id: MapId, name: string, biome: BiomeId, width: number, depth: nu
   blue: spawns(depth / 2 - 6), red: spawns(-depth / 2 + 6), viewDistance: Math.max(width, depth) * 2, fogNear: Math.max(width, depth) * .75,
 });
 
-export const MAPS: Record<MapId, Arena> = {
+const BUILTIN_MAPS: Record<string, Arena> = {
   dust: {
     id: 'dust', name: 'DUST II', biome: 'desert', subtitle: 'CLASSIC ROUTES / LONG · MID · TUNNELS',
     description: 'Dust2-inspired routing: Long A and pit, short/catwalk, mid double doors, B tunnels, and a defender-side A/B rotation.',
@@ -149,3 +149,19 @@ export const MAPS: Record<MapId, Arena> = {
     ...[-1, 1].flatMap(s => [box(s * 31, s * 30, 12, 3, 1.4, 'crate', 0x79634d), box(s * 16, -s * 2, 3, 12, 1.4, 'crate', 0x79634d), crate(s * 9, s * 36, 3, 4, 1.2), box(s * 37, -s * 30, 5, 5, 3, 'wall')]),
   ], [{ x: -10, z: 0 }, { x: 10, z: 0 }, { x: -35, z: 5 }, { x: 35, z: -5 }, { x: 0, z: 30 }]),
 };
+
+// Drop a JSON file into src/maps/custom/ and it appears in the map picker as custom_<file>.
+// See docs/MAP_AUTHORING.md. A broken file is skipped (and logged) instead of breaking the game.
+export function customMapId(file: string): MapId {
+  return `custom_${file.replace(/^.*\//, '').replace(/\.json$/i, '').toLowerCase().replace(/[^a-z0-9_]+/g, '_').slice(0, 48)}`;
+}
+const CUSTOM: Record<string, Arena> = {};
+const sources = import.meta.glob('./maps/custom/*.json', { eager: true, import: 'default' });
+for (const [file, json] of Object.entries(sources).sort(([a], [b]) => a.localeCompare(b))) {
+  const id = customMapId(file);
+  try { CUSTOM[id] = compileMap(json, id); }
+  catch (error) { console.error(`[maps] Skipping ${file}: ${(error as Error).message}`); }
+}
+registerCustomMaps(Object.keys(CUSTOM));
+export const MAPS = { ...BUILTIN_MAPS, ...CUSTOM } as Record<MapId, Arena>;
+

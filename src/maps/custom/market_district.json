@@ -1,0 +1,547 @@
+{
+  "displayName": "Market District",
+  "biome": "urban",
+  "subtitle": "URBAN / MARKET MID \u00b7 B HALLS \u00b7 RAISED A",
+  "description": "Two-site bazaar. T push through a covered B hall, a stall-lined mid, or an east street that climbs to a raised A site.",
+  "mapName": "de_market_district",
+  "unitScale": 1.0,
+  "bounds": {
+    "min": [
+      -55,
+      -5,
+      -60
+    ],
+    "max": [
+      55,
+      10,
+      60
+    ]
+  },
+  "regions": [
+    {
+      "id": "t_spawn",
+      "type": "zone",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "z": -48,
+        "width": 30,
+        "height": 5,
+        "depth": 14
+      },
+      "tags": [
+        "spawn_t",
+        "buyzone"
+      ],
+      "cover": [
+        {
+          "type": "wooden_crate",
+          "pos": [
+            -9,
+            0,
+            -51
+          ],
+          "size": [
+            2,
+            2,
+            2
+          ]
+        },
+        {
+          "type": "wooden_crate",
+          "pos": [
+            10,
+            0,
+            -44
+          ],
+          "size": [
+            2,
+            2,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "id": "t_alley_west",
+      "type": "lane",
+      "bounds": {
+        "x": -30,
+        "y": 0,
+        "z": -30,
+        "width": 10,
+        "height": 5,
+        "depth": 24
+      },
+      "tags": [
+        "flank_t"
+      ],
+      "cover": [
+        {
+          "type": "half_wall",
+          "pos": [
+            -27,
+            0,
+            -31
+          ],
+          "size": [
+            0.5,
+            1.2,
+            6
+          ]
+        },
+        {
+          "type": "wooden_crate",
+          "pos": [
+            -33,
+            0,
+            -22
+          ],
+          "size": [
+            2,
+            2,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "id": "t_street_east",
+      "type": "lane",
+      "bounds": {
+        "x": 30,
+        "y": 0,
+        "z": -30,
+        "width": 12,
+        "height": 5,
+        "depth": 24
+      },
+      "tags": [
+        "lane"
+      ],
+      "cover": [
+        {
+          "type": "car",
+          "pos": [
+            32,
+            0,
+            -34
+          ],
+          "size": [
+            4.2,
+            1.7,
+            2
+          ],
+          "rotY": -0.3
+        },
+        {
+          "type": "metal_barrel",
+          "pos": [
+            26,
+            0,
+            -22
+          ],
+          "size": [
+            1.2,
+            1.6,
+            1.2
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mid_market",
+      "type": "zone",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "z": -5,
+        "width": 20,
+        "height": 5,
+        "depth": 26
+      },
+      "tags": [
+        "mid",
+        "open"
+      ],
+      "cover": [
+        {
+          "type": "wooden_crate",
+          "pos": [
+            0,
+            0,
+            -6
+          ],
+          "size": [
+            3,
+            1.6,
+            3
+          ]
+        },
+        {
+          "type": "wooden_crate",
+          "pos": [
+            -5,
+            0,
+            1
+          ],
+          "size": [
+            2,
+            2,
+            2
+          ]
+        },
+        {
+          "type": "wooden_crate",
+          "pos": [
+            5,
+            0,
+            -12
+          ],
+          "size": [
+            2,
+            1.2,
+            2
+          ]
+        },
+        {
+          "type": "stall_wall",
+          "pos": [
+            -7,
+            0,
+            -9
+          ],
+          "size": [
+            0.4,
+            2.5,
+            6
+          ]
+        },
+        {
+          "type": "stall_wall",
+          "pos": [
+            7,
+            0,
+            0
+          ],
+          "size": [
+            0.4,
+            2.5,
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "id": "b_halls",
+      "type": "tunnel",
+      "bounds": {
+        "x": -38,
+        "y": 0,
+        "z": 0,
+        "width": 10,
+        "height": 4,
+        "depth": 26
+      },
+      "tags": [
+        "tunnel",
+        "chokepoint"
+      ],
+      "cover": [
+        {
+          "type": "support_pillar",
+          "pos": [
+            -38,
+            0,
+            3
+          ],
+          "size": [
+            1.2,
+            4,
+            1.2
+          ]
+        },
+        {
+          "type": "crate_stack",
+          "pos": [
+            -41,
+            0,
+            -8
+          ],
+          "size": [
+            2,
+            2.4,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a_ramp",
+      "type": "lane",
+      "bounds": {
+        "x": 38,
+        "y": 1,
+        "z": -2,
+        "width": 12,
+        "height": 5,
+        "depth": 22
+      },
+      "tags": [
+        "elevated",
+        "lane"
+      ],
+      "cover": [
+        {
+          "type": "half_wall",
+          "pos": [
+            42,
+            1,
+            0
+          ],
+          "size": [
+            0.4,
+            1.2,
+            10
+          ]
+        }
+      ]
+    },
+    {
+      "id": "site_a",
+      "type": "site",
+      "bounds": {
+        "x": 34,
+        "y": 2,
+        "z": 30,
+        "width": 22,
+        "height": 5,
+        "depth": 20
+      },
+      "tags": [
+        "bombsite_a",
+        "elevated"
+      ],
+      "cover": [
+        {
+          "type": "wooden_crate",
+          "pos": [
+            34,
+            2,
+            30
+          ],
+          "size": [
+            3,
+            2,
+            3
+          ]
+        },
+        {
+          "type": "metal_crate",
+          "pos": [
+            28,
+            2,
+            25
+          ],
+          "size": [
+            2.4,
+            2.4,
+            2.4
+          ]
+        },
+        {
+          "type": "container",
+          "pos": [
+            41,
+            2,
+            36
+          ],
+          "size": [
+            2.5,
+            2.8,
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "id": "site_b",
+      "type": "site",
+      "bounds": {
+        "x": -34,
+        "y": 0,
+        "z": 30,
+        "width": 22,
+        "height": 5,
+        "depth": 20
+      },
+      "tags": [
+        "bombsite_b"
+      ],
+      "cover": [
+        {
+          "type": "wooden_crate",
+          "pos": [
+            -34,
+            0,
+            30
+          ],
+          "size": [
+            3,
+            2,
+            3
+          ]
+        },
+        {
+          "type": "car",
+          "pos": [
+            -41,
+            0,
+            24
+          ],
+          "size": [
+            4.2,
+            1.7,
+            2
+          ],
+          "rotY": -1.2
+        },
+        {
+          "type": "crate_stack",
+          "pos": [
+            -28,
+            0,
+            36
+          ],
+          "size": [
+            2,
+            3,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ct_courtyard",
+      "type": "zone",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "z": 28,
+        "width": 24,
+        "height": 5,
+        "depth": 16
+      },
+      "tags": [
+        "ct_control",
+        "rotation"
+      ],
+      "cover": [
+        {
+          "type": "fountain_block",
+          "pos": [
+            0,
+            0,
+            28
+          ],
+          "size": [
+            4,
+            1.1,
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ct_spawn",
+      "type": "zone",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "z": 50,
+        "width": 28,
+        "height": 5,
+        "depth": 12
+      },
+      "tags": [
+        "spawn_ct",
+        "buyzone"
+      ],
+      "cover": [
+        {
+          "type": "wooden_crate",
+          "pos": [
+            9,
+            0,
+            53
+          ],
+          "size": [
+            2,
+            2,
+            2
+          ]
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "t_spawn",
+      "to": "t_alley_west",
+      "type": "open"
+    },
+    {
+      "from": "t_spawn",
+      "to": "t_street_east",
+      "type": "open"
+    },
+    {
+      "from": "t_spawn",
+      "to": "mid_market",
+      "type": "open"
+    },
+    {
+      "from": "t_alley_west",
+      "to": "b_halls",
+      "type": "doorway"
+    },
+    {
+      "from": "b_halls",
+      "to": "site_b",
+      "type": "doorway"
+    },
+    {
+      "from": "t_street_east",
+      "to": "a_ramp",
+      "type": "ramp",
+      "elevationChange": 1
+    },
+    {
+      "from": "a_ramp",
+      "to": "site_a",
+      "type": "ramp",
+      "elevationChange": 1
+    },
+    {
+      "from": "mid_market",
+      "to": "ct_courtyard",
+      "type": "chokepoint"
+    },
+    {
+      "from": "ct_courtyard",
+      "to": "site_a",
+      "type": "stairs",
+      "elevationChange": 2
+    },
+    {
+      "from": "ct_courtyard",
+      "to": "site_b",
+      "type": "open"
+    },
+    {
+      "from": "ct_spawn",
+      "to": "ct_courtyard",
+      "type": "open"
+    }
+  ]
+}

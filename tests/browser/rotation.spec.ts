@@ -101,7 +101,7 @@ test('auto elimination advances rounds without a loadout interruption and resets
   expect(await page.evaluate(() => ({ round: window.__OPENCS__.round, scores: window.__OPENCS__.scores, remaining: Math.ceil(window.__OPENCS__.remaining), kills: window.__OPENCS__.player.kills }))).toEqual({ round: 1, scores: { blue: 0, red: 0 }, remaining: 45, kills: 25 });
 });
 
-for (const map of ['dust2_blockout', 'canopy', 'dockyard', 'alpine', 'redrock', 'quarter', 'foundry', 'pinewatch']) test(`${map} renders, spawns both teams, and runs real bot/physics simulation`, async ({ page }) => {
+for (const map of ['dust2_blockout', 'canopy', 'dockyard', 'alpine', 'redrock', 'quarter', 'foundry', 'pinewatch', 'custom_market_district']) test(`${map} renders, spawns both teams, and runs real bot/physics simulation`, async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message));
   await prepare(page, { map }); await deploy(page);
   const result = await page.evaluate(() => {
