@@ -7,7 +7,10 @@ export type Action = { kind: 'reload' } | { kind: 'quick' } | { kind: 'equip'; w
 export interface Controls {
   keys: string[]; yaw: number; pitch: number; scope: number; fire: boolean; trigger: boolean;
   jump: boolean; actions: Action[]; grenade?: { type: 'he' | 'flash' | 'smoke'; held: number };
+  // Guest-predicted movement result. The host validates it (see netcode.acceptMove).
+  move?: { position: [number, number, number]; velocity: [number, number, number]; grounded: boolean; crouched: boolean };
 }
+const vec3 = (v: unknown): v is [number, number, number] => Array.isArray(v) && v.length === 3 && v.every(n => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) < 1e4);
 export const MOVE_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ControlLeft', 'ControlRight', 'KeyC', 'ShiftLeft', 'ShiftRight'];
 export function cleanControls(value: unknown): Controls | undefined {
   if (!value || typeof value !== 'object') return;
@@ -19,6 +22,7 @@ export function cleanControls(value: unknown): Controls | undefined {
     fire: v.fire === true, trigger: v.trigger === true, jump: v.jump === true,
     actions: Array.isArray(v.actions) ? v.actions.slice(0, 8).filter(a => a && (a.kind === 'reload' || a.kind === 'quick' || (a.kind === 'equip' && ['ak', 'm4', 'awp', 'pistol', 'knife', 'he', 'flash', 'smoke'].includes(a.weapon)))) : [],
     grenade: v.grenade && ['he', 'flash', 'smoke'].includes(v.grenade.type) && Number.isFinite(v.grenade.held) ? { type: v.grenade.type, held: Math.max(0, Math.min(1.5, v.grenade.held)) } : undefined,
+    move: v.move && vec3(v.move.position) && vec3(v.move.velocity) ? { position: [...v.move.position] as [number, number, number], velocity: v.move.velocity.map(n => Math.max(-40, Math.min(40, n))) as [number, number, number], grounded: v.move.grounded === true, crouched: v.move.crouched === true } : undefined,
   };
 }
 

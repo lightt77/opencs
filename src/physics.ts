@@ -57,6 +57,11 @@ export class CharacterBody {
     this.grounded = false;
   }
 
+  // Move to a trusted feet position on the next step (no collision sweep).
+  place(point: { x: number; y: number; z: number }) {
+    this.body.setNextKinematicTranslation({ x: point.x, y: point.y + this.height, z: point.z });
+  }
+
   crouch(enabled: boolean) {
     if (enabled === this.crouched) return;
     const feet = this.position();

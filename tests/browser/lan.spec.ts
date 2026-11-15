@@ -157,3 +157,25 @@ test('configurable team counts and grenade physics persist, lethal blasts launch
   });
   expect(result).toEqual({ count: 6, power: 60, weight: 'heavy', bounce: false, upward: 1.6, direction: 1, blast: true });
 });
+
+test('LAN guests predict their own movement without waiting for the host, and the host adopts it', async ({ browser }) => {
+  const hc = await browser.newContext(), gc = await browser.newContext();
+  const host = await hc.newPage(), guest = await gc.newPage();
+  const errors: string[] = []; host.on('pageerror', e => errors.push(e.message)); guest.on('pageerror', e => errors.push(e.message));
+  try {
+    await room(host, guest, false);
+    await expect.poll(() => guest.evaluate(() => window.__OPENCS__.phase)).toBe('live');
+    // Simulate a laggy link: hold back every host snapshot for 400 ms.
+    await guest.evaluate(() => { const lan = window.__OPENCS__.lan, original = lan.onSnapshot!; lan.onSnapshot = state => { setTimeout(() => original(state), 400); }; });
+    const start = await guest.evaluate(() => window.__OPENCS__.player.position.toArray());
+    await guest.keyboard.down('KeyW');
+    await guest.waitForTimeout(250);
+    const moved = await guest.evaluate(([x, , z]) => Math.hypot(window.__OPENCS__.player.position.x - x, window.__OPENCS__.player.position.z - z), start);
+    expect(moved).toBeGreaterThan(.6); // predicted locally, well before any delayed snapshot could arrive
+    await guest.keyboard.up('KeyW');
+    await guest.waitForTimeout(900);
+    const [g, h] = await Promise.all([guest.evaluate(() => window.__OPENCS__.player.position.toArray()), host.evaluate(() => window.__OPENCS__.actors[1].position.toArray())]);
+    expect(Math.hypot(g[0] - h[0], g[2] - h[2])).toBeLessThan(.5); // host adopted the guest's movement
+    expect(errors).toEqual([]);
+  } finally { await hc.close(); await gc.close(); }
+});

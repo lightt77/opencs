@@ -10,6 +10,7 @@ import { disposeTree, weaponModel } from './models';
 import { Navigation } from './navigation';
 import { Physics } from './physics';
 import { View } from './view';
+import { SnapshotBuffer, acceptMove, startTicker } from './netcode';
 import { airVelocity, footstepStride, movementScale, scopeFov, verticalMotion } from './movement';
 import { coverHits, penetration } from './ballistics';
 import { chooseSpawn, spawnCandidates } from './spawns';
@@ -33,9 +34,12 @@ export class Game {
   network = false;
   private localActor = 0;
   private members = new Map<string, number>();
-  private remoteControls = new Map<number, { controls: Controls; received: number }>();
+  private remoteControls = new Map<number, { controls: Controls; received: number; accepted: number }>();
   private actions: Action[] = [];
-  private networkTimer?: number;
+  private stopTicker?: () => void;
+  private snapshots = new SnapshotBuffer();
+  private predictedAt = 0;
+  private predictStep = 0;
   private netTick = 0;
   private netReceived = 0;
   private events: Array<{ kind: 'shot' | 'throw' | 'explosion' | 'flash' | 'smoke' | 'hit'; actor?: number; weapon?: WeaponId; point: number[]; end?: number[]; amount?: number; head?: boolean; killed?: boolean }> = [];
@@ -134,7 +138,7 @@ export class Game {
       if (actor === undefined || !controls || !this.lan.host) return;
       const previous = this.remoteControls.get(actor)?.controls;
       if (previous) { controls.trigger ||= previous.trigger; controls.jump ||= previous.jump; controls.grenade ??= previous.grenade; controls.actions = [...previous.actions, ...controls.actions].slice(0, 16); }
-      this.remoteControls.set(actor, { controls, received: performance.now() });
+      this.remoteControls.set(actor, { controls, received: performance.now(), accepted: this.remoteControls.get(actor)?.accepted ?? 0 });
     };
     this.lan.onSnapshot = state => { if (this.network && !this.lan.host) this.restoreSnapshot(state); };
     this.lan.onPrimary = (id, primary) => {
@@ -238,8 +242,8 @@ export class Game {
 
   private cleanup() {
     this.scoped = false;
-    if (this.networkTimer !== undefined) window.clearInterval(this.networkTimer);
-    this.networkTimer = undefined; this.network = false; this.remoteControls.clear(); this.events = []; this.inactive.clear();
+    this.stopTicker?.(); this.stopTicker = undefined; this.snapshots.clear();
+    this.network = false; this.remoteControls.clear(); this.events = []; this.inactive.clear();
     for (const mesh of this.replicaGrenades) { this.view.scene.remove(mesh); disposeTree(mesh); } this.replicaGrenades = [];
     this.radio.reset(); this.sound.stopRadio();
     this.clearGrenades();
@@ -353,24 +357,46 @@ export class Game {
     this.network = true; this.netTick = 0; this.netReceived = performance.now();
     this.members = new Map(roster.flatMap((a, i) => a.member ? [[a.member, i] as const] : []));
     let last = performance.now(), accumulated = 0;
-    this.networkTimer = window.setInterval(() => {
+    this.snapshots.clear();
+    // A worker-driven tick keeps the host simulating (and guests sending) in background tabs.
+    this.stopTicker = startTicker(60, () => {
       const now = performance.now(), elapsed = Math.min(.1, (now - last) / 1000); last = now;
       if (this.lan.host) {
         accumulated += elapsed;
         while (accumulated >= FIXED_DT) { this.update(FIXED_DT); accumulated -= FIXED_DT; }
-        if (++this.netTick % 3 === 0) { this.lan.send({ type: 'snapshot', state: this.snapshot() }); this.events = []; }
+        if (++this.netTick % 2 === 0) { this.lan.send({ type: 'snapshot', state: this.snapshot() }); this.events = []; }
       } else {
         if (now - this.netReceived > 8000) { this.toMenu(); this.lan.status = 'The host stopped responding. Room closed.'; this.lan.onChange?.(); return; }
-        if (++this.netTick % 2 === 0) {
-          const p = this.player, active = this.screen === 'playing';
-          const controls: Controls = active ? { keys: [...this.keys], yaw: p.yaw + this.recoilYaw, pitch: p.pitch + this.recoilPitch, scope: this.scopeLevel, fire: this.mouseDown, trigger: this.trigger, jump: this.jumpQueued, actions: this.actions.splice(0), grenade: this.grenadeRelease } : this.emptyControls(p);
-          this.lan.send({ type: 'input', controls });
-          this.trigger = this.jumpQueued = false; this.grenadeRelease = undefined;
-        }
+        // Client-side prediction: the guest moves itself immediately instead of waiting a round trip.
+        accumulated += elapsed;
+        let jump = this.jumpQueued;
+        while (accumulated >= FIXED_DT) { this.predict(FIXED_DT, jump); jump = false; accumulated -= FIXED_DT; }
+        const p = this.player, active = this.screen === 'playing';
+        const controls: Controls = active ? { keys: [...this.keys], yaw: p.yaw + this.recoilYaw, pitch: p.pitch + this.recoilPitch, scope: this.scopeLevel, fire: this.mouseDown, trigger: this.trigger, jump: this.jumpQueued, actions: this.actions.splice(0), grenade: this.grenadeRelease } : this.emptyControls(p);
+        if (active && this.predicting()) controls.move = { position: p.position.toArray() as [number, number, number], velocity: p.velocity.toArray() as [number, number, number], grounded: p.body.grounded, crouched: p.body.crouched };
+        this.lan.send({ type: 'input', controls });
+        this.trigger = this.jumpQueued = false; this.grenadeRelease = undefined;
         this.kick = Math.max(0, this.kick - elapsed * 6); this.shotFlash = Math.max(0, this.shotFlash - elapsed);
         this.recoilPitch *= Math.exp(-elapsed * 6); this.recoilYaw *= Math.exp(-elapsed * 7);
       }
-    }, 1000 / 60);
+    });
+  }
+
+  private predicting() { return this.network && !this.lan.host && this.screen === 'playing' && this.phase === 'live' && !!this.player?.alive; }
+
+  // Guest-only: run the same movement code the host runs, against the local static world.
+  private predict(dt: number, jump: boolean) {
+    if (!this.predicting() || !this.physics) return;
+    const p = this.player;
+    p.previousPosition.copy(p.position);
+    this.moveActor(p, this.keys, jump, this.scoped, this.mouseDown, this.trigger, dt);
+    this.physics.world.step();
+    p.sync(); this.predictedAt = performance.now();
+    const speed = Math.hypot(p.position.x - p.previousPosition.x, p.position.z - p.previousPosition.z) / dt;
+    if (p.body.grounded && speed > .8) {
+      this.predictStep += speed * dt;
+      if (this.predictStep >= footstepStride(p.sprinting, p.body.crouched)) { this.predictStep = 0; this.footstep(p); }
+    }
   }
 
   snapshot() {
@@ -403,16 +429,26 @@ export class Game {
     this.round = state.round; this.scores = state.scores; this.winner = state.winner;
     this.announcement = state.announcement; this.announcementTime = state.announcementTime; this.kills = state.kills;
     if (oldRound !== state.round) { this.radio.reset(); this.sound.stopRadio(); this.reportedCounts.clear(); this.view.clearEffects(); this.damagePopups = []; }
+    this.snapshots.push(state.time, state.actors.map(s => [s.position[0], s.position[1], s.position[2], s.yaw]), performance.now() / 1000);
+    const predicting = this.predicting() && state.phase === 'live' && state.screen === 'playing';
     for (const [i, s] of state.actors.entries()) {
       const a = this.actors[i]; if (!a) continue;
       const alive = a.alive, health = a.health, yaw = a.yaw, pitch = a.pitch, previousWeapon = a.weapon, wasReloading = a.reload > 0, wasGrounded = a.body.grounded;
+      const previousLocal = a.previousPosition.clone();
       a.previousPosition.copy(a.position);
       const { position, velocity, deathOrigin, deathDirection, crouched, grounded, active, ...fields } = s;
       if (active) this.inactive.delete(i); else this.inactive.add(i);
       Object.assign(a, fields);
-      a.position.fromArray(position); a.velocity.fromArray(velocity); a.deathOrigin.fromArray(deathOrigin); a.deathDirection.fromArray(deathDirection);
-      if ((!alive && a.alive) || a.previousPosition.distanceTo(a.position) > 5) a.previousPosition.copy(a.position);
-      a.body.crouched = crouched; a.body.grounded = grounded;
+      a.deathDirection.fromArray(deathDirection); a.deathOrigin.fromArray(deathOrigin);
+      const own = a === this.player, server = new THREE.Vector3().fromArray(position);
+      // Keep the guest's predicted motion unless the host disagrees badly (respawn, rejected move).
+      const keepLocal = own && predicting && alive && a.alive && a.position.distanceTo(server) < 2.5;
+      if (!keepLocal) {
+        a.position.copy(server); a.velocity.fromArray(velocity);
+        if ((!alive && a.alive) || a.previousPosition.distanceTo(a.position) > 5) a.previousPosition.copy(a.position);
+        if (own) { a.body.teleport(a.position); a.body.crouch(crouched); a.body.grounded = grounded; }
+        else { a.body.crouched = crouched; a.body.grounded = grounded; }
+      } else a.previousPosition.copy(previousLocal);
       if (a === this.player) {
         if (previousWeapon !== a.weapon) this.cancelGrenade();
         if (alive && a.alive && !changedMap) { a.yaw = yaw; a.pitch = pitch; }
@@ -425,14 +461,14 @@ export class Game {
         if (!alive && a.alive) { this.deathCamera = undefined; this.scoped = false; }
         if (a.weapon !== 'awp' || a.reload > 0 || a.sprinting) this.scoped = false;
       }
-      a.model.equip(a.weapon); a.model.root.position.copy(a.position);
+      a.model.equip(a.weapon); if (own) a.model.root.position.copy(a.position);
       a.model.root.rotation.y = a.alive ? a.yaw : Math.atan2(a.deathDirection.x, a.deathDirection.z);
       const dt = Math.max(0, state.time - oldTime);
       if (alive && !a.alive) this.sound.death(a === this.player ? undefined : a.position);
       if (!wasReloading && a.reload > 0) this.sound.reload(a === this.player ? undefined : a.position);
-      if (wasGrounded && !grounded && a.velocity.y > 0) this.sound.jump(a === this.player ? undefined : a.position);
+      if (!keepLocal && wasGrounded && !grounded && a.velocity.y > 0) this.sound.jump(own ? undefined : a.position);
       if (alive && !a.alive && a.team !== this.player.team && this.actors.some(bot => !bot.human && bot.alive && bot.team === this.player.team && this.botSees(bot, a))) this.radio.observedDeaths.add(a.id);
-      if (alive && a.alive && grounded && this.phase === 'live') {
+      if (!keepLocal && alive && a.alive && grounded && this.phase === 'live') {
         const moved = a.previousPosition.distanceTo(a.position);
         if (moved < 2) a.step += moved;
         if (a.step >= footstepStride(a.sprinting, crouched)) { a.step = 0; this.sound.step(a === this.player ? undefined : a.position, this.arena.biome === 'snow', a.sprinting, crouched); }
@@ -573,8 +609,13 @@ export class Game {
       this.view.updateEffects(dt);
     } else { this.accumulator = 0; if (this.network) this.view.updateEffects(dt); }
     if (this.network && !this.lan.host) {
-      const alpha = clamp((performance.now() - this.netReceived) / 50, 0, 1);
-      for (const a of this.actors) { if (a !== this.player) a.model.root.position.copy(a.previousPosition).lerp(a.position, alpha); a.throwAge += dt; }
+      const alpha = clamp((performance.now() - this.netReceived) / 33, 0, 1), local = performance.now() / 1000;
+      for (const a of this.actors) {
+        a.throwAge += dt; if (a === this.player) continue;
+        const sample = a.alive ? this.snapshots.sample(a.id, local) : undefined;
+        if (sample) { a.model.root.position.set(sample[0], sample[1], sample[2]); a.model.root.rotation.y = sample[3]; }
+        else a.model.root.position.copy(a.previousPosition).lerp(a.position, alpha);
+      }
     }
     this.camera(dt);
     const showWeapon = this.screen !== 'menu' && !!this.player?.alive && !this.scoped;
@@ -640,7 +681,7 @@ export class Game {
             const remote = this.remoteControls.get(actor.id);
             const controls = remote && performance.now() - remote.received < 300 ? remote.controls : this.emptyControls(actor);
             this.updatePlayer(dt, actor, controls);
-            controls.trigger = controls.jump = false; controls.actions = []; controls.grenade = undefined;
+            controls.trigger = controls.jump = false; controls.actions = []; controls.grenade = undefined; controls.move = undefined;
           }
         }
         else updateBot(actor, dt, context);
@@ -667,14 +708,7 @@ export class Game {
     this.updateAwpScopeReturn();
   }
 
-  private updatePlayer(dt: number, p = this.player, controls?: Controls) {
-    const keys = controls ? new Set(controls.keys) : this.keys;
-    const firing = controls ? controls.fire : this.mouseDown;
-    const trigger = controls ? controls.trigger : this.trigger;
-    const jump = controls ? controls.jump : this.jumpQueued;
-    let scoped = controls ? controls.scope > 0 && p.weapon === 'awp' : this.scoped;
-    if (controls) { p.yaw = controls.yaw; p.pitch = controls.pitch; for (const action of controls.actions) this.applyAction(p, action); }
-    if (p.reload > 0 || p.switching > 0) scoped = false;
+  private moveActor(p: Actor, keys: Set<string>, jump: boolean, scoped: boolean, firing: boolean, trigger: boolean, dt: number) {
     p.body.crouch(keys.has('ControlLeft') || keys.has('ControlRight') || keys.has('KeyC'));
     const forward = Number(keys.has('KeyW')) - Number(keys.has('KeyS'));
     const right = Number(keys.has('KeyD')) - Number(keys.has('KeyA'));
@@ -685,7 +719,7 @@ export class Game {
     const maxSpeed = WEAPONS[p.weapon].speed * this.settings.movementSpeed * movementScale(p.body.crouched, scoped, p.sprinting);
     const vertical = verticalMotion(p.velocity.y, p.body.grounded, jump, p.jumpsUsed, this.settings.doubleJump, this.settings.jumpGravity, dt);
     if (vertical.jumpsUsed > p.jumpsUsed) this.sound.jump(p === this.player ? undefined : p.position);
-    p.velocity.y = vertical.velocity; p.jumpsUsed = vertical.jumpsUsed; if (!controls) this.jumpQueued = false;
+    p.velocity.y = vertical.velocity; p.jumpsUsed = vertical.jumpsUsed;
     if (p.body.grounded) {
       const v = groundVelocity(p.velocity.x, p.velocity.z, dx, dz, maxSpeed, dt);
       p.velocity.x = v.x; p.velocity.z = v.z;
@@ -694,6 +728,33 @@ export class Game {
       p.velocity.x = v.x; p.velocity.z = v.z;
     }
     p.body.move(p.velocity.x * dt, p.velocity.y * dt, p.velocity.z * dt);
+  }
+
+  // Host-only: replace the host's own integration of a guest with the guest's predicted result
+  // when it is physically plausible. Otherwise the host's result stands and the guest is corrected.
+  private applyRemoteMove(p: Actor, move: NonNullable<Controls['move']>, dt: number) {
+    const remote = this.remoteControls.get(p.id), now = performance.now();
+    const maxSpeed = WEAPONS[p.weapon].speed * this.settings.movementSpeed * 1.5;
+    const elapsed = remote?.accepted ? (now - remote.accepted) / 1000 : dt;
+    if (acceptMove(p.previousPosition, move.position, maxSpeed, elapsed)) {
+      p.body.crouch(move.crouched);
+      p.body.place({ x: move.position[0], y: move.position[1], z: move.position[2] });
+      p.velocity.fromArray(move.velocity); p.body.grounded = move.grounded;
+      if (remote) remote.accepted = now;
+    }
+  }
+
+  private updatePlayer(dt: number, p = this.player, controls?: Controls) {
+    const keys = controls ? new Set(controls.keys) : this.keys;
+    const firing = controls ? controls.fire : this.mouseDown;
+    const trigger = controls ? controls.trigger : this.trigger;
+    const jump = controls ? controls.jump : this.jumpQueued;
+    let scoped = controls ? controls.scope > 0 && p.weapon === 'awp' : this.scoped;
+    if (controls) { p.yaw = controls.yaw; p.pitch = controls.pitch; for (const action of controls.actions) this.applyAction(p, action); }
+    if (p.reload > 0 || p.switching > 0) scoped = false;
+    this.moveActor(p, keys, jump, scoped, firing, trigger, dt);
+    if (!controls) this.jumpQueued = false;
+    if (controls?.move && p !== this.player) this.applyRemoteMove(p, controls.move, dt);
     // Preserve quick clicks even when down/up both occur between fixed simulation ticks.
     const release = controls ? controls.grenade : this.grenadeRelease;
     if (release) {
@@ -1021,7 +1082,7 @@ export class Game {
     for (const actor of this.actors) actor.model.root.visible = actor !== p && !this.inactive.has(actor.id);
     if (p.alive) {
       this.spectating = '';
-      const alpha = this.network ? this.lan.host ? 1 : clamp((performance.now() - this.netReceived) / 50, 0, 1) : clamp(this.accumulator / FIXED_DT, 0, 1);
+      const alpha = this.network ? this.lan.host ? 1 : clamp((performance.now() - (this.predicting() ? this.predictedAt : this.netReceived)) / (this.predicting() ? FIXED_DT * 1000 : 33), 0, 1) : clamp(this.accumulator / FIXED_DT, 0, 1);
       const position = p.previousPosition.clone().lerp(p.position, this.screen === 'playing' ? alpha : 1);
       this.eyeY += (p.eyeHeight - this.eyeY) * Math.min(1, dt * 16);
       const bob = Math.sin(this.time * (p.sprinting ? 19 : 14)) * (p.sprinting ? .021 : .013) * Math.min(p.speed / 5, 1) * (p.body.grounded ? 1 : 0);

@@ -13,7 +13,8 @@ async function deploy(page: Page) {
 
 test('biome browser and configurable timing/auto mode persist without changing saved audio', async ({ page }) => {
   await prepare(page, { soundPack: 'custom', volume: 27 });
-  await expect(page.locator('[data-map]')).toHaveCount(12);
+  await expect(page.locator('[data-map]')).toHaveCount(12 + 1); // built-ins + src/maps/custom/market_district.json
+  await expect(page.locator('[data-map="custom_market_district"]')).toBeVisible();
   await page.locator('#biome-filter').selectOption('snow');
   await expect(page.locator('[data-map]')).toHaveCount(2);
   await page.locator('[data-map="alpine"]').click();
